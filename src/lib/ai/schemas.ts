@@ -106,5 +106,9 @@ export type GeneratedTurnResponse = z.infer<typeof turnResponseSchema>;
 export const createWorldRequestSchema = z.object({
     genre: z.string().min(1).max(50),
     prompt: z.string().min(1).max(1000),
-    art_style: z.string().optional(),
+    art_style: z.enum([
+        "epic-fantasy", "sci-fi-concept", "dark-gothic",
+        "watercolor-romance", "anime-vibrant", "noir-mystery",
+        "post-apocalyptic",
+    ]).optional(),
 });

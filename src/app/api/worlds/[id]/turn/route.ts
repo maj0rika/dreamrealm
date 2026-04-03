@@ -141,7 +141,7 @@ export async function POST(
 
         // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget) — 아트 스타일 자동 append
         if (aiResponse.generate_image && aiResponse.image_prompt) {
-            const imagePromptWithStyle = aiResponse.image_prompt + ", " + (world.art_style ?? "");
+            const imagePromptWithStyle = aiResponse.image_prompt + ", " + world.art_style;
             generateAndSaveTurnImage(
                 worldId,
                 newTurnNumber,
