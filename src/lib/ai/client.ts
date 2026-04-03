@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { Plan } from "@/types/user";
+import { hasForeignText, sanitizeKoreanResponse } from "./sanitize-korean";
 
 let _openRouterClient: OpenAI | null = null;
 let _groqClient: OpenAI | null = null;
@@ -53,7 +54,7 @@ export async function callAI(
 ): Promise<string> {
     const client = getClient(userPlan);
     const model = getModel(userPlan);
-    const { temperature = 0.8, maxTokens } = options;
+    const { temperature = 0.7, maxTokens } = options;
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
         model,
@@ -70,7 +71,12 @@ export async function callAI(
             if (!content) {
                 throw new Error("AI 응답이 비어있습니다");
             }
-            return content;
+
+            // 외국어 감지 시 로그 + sanitize 폴백 (재시도 없이 토큰 절약)
+            if (hasForeignText(content)) {
+                console.warn("[callAI] 외국어 감지됨, sanitize 적용");
+            }
+            return sanitizeKoreanResponse(content);
         } catch (error) {
             if (attempt === 1) throw error;
             // 첫 번째 실패 시 재시도
