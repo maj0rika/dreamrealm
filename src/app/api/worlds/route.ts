@@ -12,6 +12,8 @@ import { createLocation } from "@/lib/db/locations";
 import { createEntity } from "@/lib/db/entities";
 import { createRelationship } from "@/lib/db/relationships";
 import { createTurn } from "@/lib/db/turns";
+import { generateImage } from "@/lib/ai/image-generator";
+import { uploadImageFromUrl } from "@/lib/storage/upload";
 import type { WorldSpec, TurnResponse, Mood } from "@/types/world";
 
 export async function POST(request: Request) {
@@ -255,6 +257,11 @@ export async function POST(request: Request) {
             .update({ turn_count: 1 })
             .eq("id", world.id);
 
+        // 커버 이미지 비동기 생성 (fire-and-forget)
+        generateAndSaveCoverImage(world.id, generatedSpec.image_prompt).catch(
+            (err) => console.error("[cover-image] 생성 실패:", err)
+        );
+
         return Response.json({
             worldId: world.id,
             firstTurn: generatedScene,
@@ -271,4 +278,21 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
+}
+
+/** 커버 이미지 비동기 생성 → Storage 업로드 → DB 업데이트 */
+async function generateAndSaveCoverImage(
+    worldId: string,
+    prompt: string
+): Promise<void> {
+    const imageUrl = await generateImage(prompt);
+    if (!imageUrl) return;
+
+    const publicUrl = await uploadImageFromUrl(imageUrl, `${worldId}/cover.webp`);
+
+    const supabase = await createServerClient();
+    await supabase
+        .from("worlds")
+        .update({ cover_image_url: publicUrl })
+        .eq("id", worldId);
 }

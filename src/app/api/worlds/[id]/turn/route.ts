@@ -7,6 +7,8 @@ import { extractAndApplyState } from "@/lib/ai/state-extractor";
 import { turnResponseSchema } from "@/lib/ai/schemas";
 import { createTurn } from "@/lib/db/turns";
 import { updateWorld, getWorld } from "@/lib/db/worlds";
+import { generateImage } from "@/lib/ai/image-generator";
+import { uploadImageFromUrl } from "@/lib/storage/upload";
 import type { TurnResponse, Mood } from "@/types/world";
 
 const turnRequestSchema = z.object({
@@ -137,6 +139,15 @@ export async function POST(
         // turn_count 증가
         await updateWorld(worldId, { turn_count: newTurnNumber });
 
+        // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget)
+        if (aiResponse.generate_image && aiResponse.image_prompt) {
+            generateAndSaveTurnImage(
+                worldId,
+                newTurnNumber,
+                aiResponse.image_prompt
+            ).catch((err) => console.error("[turn-image] 생성 실패:", err));
+        }
+
         // 10턴마다 세션 요약 비동기 생성 (await 안 함)
         if (newTurnNumber % 10 === 0) {
             generateSessionSummary(worldId, newTurnNumber).catch(() => {
@@ -208,4 +219,26 @@ async function generateSessionSummary(
         summary: parsed.summary,
         cliffhanger: parsed.cliffhanger ?? null,
     });
+}
+
+/** 턴 이미지 비동기 생성 → Storage 업로드 → DB 업데이트 */
+async function generateAndSaveTurnImage(
+    worldId: string,
+    turnNumber: number,
+    prompt: string
+): Promise<void> {
+    const imageUrl = await generateImage(prompt);
+    if (!imageUrl) return;
+
+    const publicUrl = await uploadImageFromUrl(
+        imageUrl,
+        `${worldId}/turns/${turnNumber}.webp`
+    );
+
+    const supabase = await createServerClient();
+    await supabase
+        .from("turns")
+        .update({ image_url: publicUrl })
+        .eq("world_id", worldId)
+        .eq("turn_number", turnNumber);
 }
