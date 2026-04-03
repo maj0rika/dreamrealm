@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { NarrationDisplay } from "@/components/explore/NarrationDisplay";
 import { ChoiceButtons } from "@/components/explore/ChoiceButtons";
@@ -47,10 +47,12 @@ interface TurnApiResponse {
     response: TurnResponse;
     flashback?: FlashbackInfo;
     locationChanged?: string;
+    isEnding?: boolean;
 }
 
 export default function WorldExplorePage() {
     const { id } = useParams<{ id: string }>();
+    const router = useRouter();
 
     const [world, setWorld] = useState<World | null>(null);
     const [narration, setNarration] = useState("");
@@ -65,11 +67,14 @@ export default function WorldExplorePage() {
     const [flashbackImageUrl, setFlashbackImageUrl] = useState<string | null>(null);
     const [flashbackVisible, setFlashbackVisible] = useState(false);
     const [timePassageEvents, setTimePassageEvents] = useState<TimePassageEvent[] | null>(null);
+    const [isCompleted, setIsCompleted] = useState(false);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
     const [typingDone, setTypingDone] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const flashbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flashbackFadeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // 세션 복원 (StrictMode 중복 방지)
     const resumedRef = useRef(false);
@@ -156,10 +161,12 @@ export default function WorldExplorePage() {
         }, 3000);
     }
 
-    // 이미지 폴링 정리
+    // 이미지 폴링 + 플래시백 타이머 정리
     useEffect(() => {
         return () => {
             if (pollingRef.current) clearInterval(pollingRef.current);
+            if (flashbackTimeoutRef.current) clearTimeout(flashbackTimeoutRef.current);
+            if (flashbackFadeoutRef.current) clearTimeout(flashbackFadeoutRef.current);
         };
     }, []);
 
@@ -204,11 +211,15 @@ export default function WorldExplorePage() {
 
     // 플래시백 연출: 과거 이미지가 반투명으로 2.5초 비친 후 페이드아웃
     function triggerFlashback(fbImageUrl: string) {
+        // 이전 타이머 정리
+        if (flashbackTimeoutRef.current) clearTimeout(flashbackTimeoutRef.current);
+        if (flashbackFadeoutRef.current) clearTimeout(flashbackFadeoutRef.current);
+
         setFlashbackImageUrl(fbImageUrl);
         setFlashbackVisible(true);
-        setTimeout(() => {
+        flashbackTimeoutRef.current = setTimeout(() => {
             setFlashbackVisible(false);
-            setTimeout(() => setFlashbackImageUrl(null), 700); // 페이드아웃 후 정리
+            flashbackFadeoutRef.current = setTimeout(() => setFlashbackImageUrl(null), 700);
         }, 2500);
     }
 
@@ -247,6 +258,9 @@ export default function WorldExplorePage() {
         if (res.ok) {
             const data: TurnApiResponse = await res.json();
             applyTurnResponse(data.response, data.turn);
+            if (data.isEnding) {
+                setIsCompleted(true);
+            }
             // 위치 변경 시 배지 업데이트
             if (data.locationChanged) {
                 setLocationName(data.locationChanged);
@@ -308,6 +322,31 @@ export default function WorldExplorePage() {
                 />
             )}
 
+            {/* 완결 오버레이 */}
+            {isCompleted && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="mx-4 max-w-sm text-center">
+                        <p className="mb-2 text-xs uppercase tracking-widest text-zinc-500">이야기가 끝났습니다</p>
+                        <h2 className="mb-4 text-xl font-medium text-zinc-200">{world?.name}</h2>
+                        <p className="mb-6 text-sm text-zinc-400">완결</p>
+                        <div className="flex flex-col gap-2">
+                            <button
+                                onClick={() => setIsCompleted(false)}
+                                className="rounded-lg border border-zinc-700 py-2.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+                            >
+                                계속 탐험하기
+                            </button>
+                            <button
+                                onClick={() => router.push("/dashboard")}
+                                className="rounded-lg bg-[#7c6aff] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#6b5ce7]"
+                            >
+                                대시보드로 돌아가기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* 상단 이미지 영역 (30~45vh) */}
             <div className="relative h-[30vh] shrink-0 overflow-hidden md:h-[45vh]">
                 {/* 폴백: 장르 분위기 그라데이션 */}
@@ -349,9 +388,8 @@ export default function WorldExplorePage() {
                         src={flashbackImageUrl}
                         alt="기억"
                         fill
-                        className={`object-cover transition-opacity duration-700 ${flashbackVisible ? "opacity-50" : "opacity-0"}`}
+                        className={`object-cover transition-opacity duration-700 [filter:sepia(0.3)_brightness(0.8)] ${flashbackVisible ? "opacity-50" : "opacity-0"}`}
                         sizes="100vw"
-                        style={{ filter: "sepia(0.3) brightness(0.8)" }}
                     />
                 )}
 

@@ -150,6 +150,21 @@ export const timePassageResponseSchema = z.object({
 
 export type TimePassageResponse = z.infer<typeof timePassageResponseSchema>;
 
+/** 스토리 작가 방향 지시서 스키마 */
+export const storyDirectionSchema = z.object({
+    current_act: z.enum(["발단", "위기", "절정", "결말"]).default("발단"),
+    tension_level: z.number().min(0).max(1).default(0.2),
+    active_threads: z.array(z.string()).min(1).default(["메인 스토리"]),
+    next_beats: z.array(z.string()).default([]),
+    foreshadowing: z.array(z.string()).default([]),
+    avoid: z.array(z.string()).default([]),
+    estimated_climax_turn: z.number().default(35),
+    ending_outline: z.string().default(""),
+    resolved_threads: z.array(z.string()).default([]),
+});
+
+export type GeneratedStoryDirection = z.infer<typeof storyDirectionSchema>;
+
 /** API 요청 스키마 */
 export const createWorldRequestSchema = z.object({
     genre: z.string().min(1).max(50),

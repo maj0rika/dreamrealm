@@ -111,6 +111,11 @@ export function WorldCard({ world }: WorldCardProps) {
                             >
                                 {genreLabel}
                             </Badge>
+                            {world.completed_at && (
+                                <span className="rounded-full bg-[#7c6aff]/20 px-2 py-0.5 text-[10px] font-medium text-[#7c6aff]">
+                                    완결
+                                </span>
+                            )}
                         </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger

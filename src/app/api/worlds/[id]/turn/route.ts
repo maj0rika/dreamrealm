@@ -3,16 +3,20 @@ import { createServerClient } from "@/lib/db/supabase-server";
 import { callAI } from "@/lib/ai/client";
 import { buildContext } from "@/lib/ai/context-builder";
 import { buildNarratorMessages } from "@/lib/ai/prompts/narrator";
+import { buildStoryDirectionUpdateMessages } from "@/lib/ai/prompts/story-director";
 import { extractAndApplyState } from "@/lib/ai/state-extractor";
 import { updateEvent } from "@/lib/db/events";
-import { turnResponseSchema } from "@/lib/ai/schemas";
+import { turnResponseSchema, storyDirectionSchema } from "@/lib/ai/schemas";
+import type { GeneratedTurnResponse } from "@/lib/ai/schemas";
 import { createTurn } from "@/lib/db/turns";
 import { updateWorld, getWorld } from "@/lib/db/worlds";
 import { getWorldLocations } from "@/lib/db/locations";
 import { getWorldEntities } from "@/lib/db/entities";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/upload";
-import type { TurnResponse, Mood } from "@/types/world";
+import { createEmbeddingVector, storeMemory } from "@/lib/memory/embeddings";
+import type { TurnResponse, Mood, StoryDirection } from "@/types/world";
+import type { Plan } from "@/types/user";
 
 const turnRequestSchema = z.object({
     input: z.string().min(1).max(500),
@@ -144,6 +148,20 @@ export async function POST(
         // turn_count 증가
         await updateWorld(worldId, { turn_count: newTurnNumber });
 
+        // ─── 엔딩 감지: "결말" 막 + 중요 이벤트(≥7) = 클라이맥스 완료 ───
+        const isEndingTurn =
+            world.story_direction?.current_act === "결말" &&
+            aiResponse.event.importance >= 7;
+
+        if (isEndingTurn) {
+            // completed_at 기록
+            await supabase
+                .from("worlds")
+                .update({ completed_at: new Date().toISOString() })
+                .eq("id", worldId);
+            console.log("[ending] 월드 완결 처리:", worldId);
+        }
+
         // 이미지 생성: 3층 프롬프트 (앵커 + 가변 + 아트스타일) + 장소 시드 고정
         console.log("[turn] generate_image:", aiResponse.generate_image, "location_changed:", aiResponse.location_changed, "image_prompt:", aiResponse.image_prompt?.slice(0, 50));
         if (aiResponse.generate_image && aiResponse.image_prompt) {
@@ -179,6 +197,22 @@ export async function POST(
             });
         }
 
+        // ─── 스토리 작가 재조정 (비동기 fire-and-forget) ───
+        // 트리거: importance ≥ 5 OR 10턴 요약 시점
+        const shouldUpdateDirection =
+            aiResponse.event.importance >= 5 || newTurnNumber % 10 === 0;
+
+        if (shouldUpdateDirection && world.story_direction?.current_act) {
+            updateStoryDirection(
+                worldId,
+                world.story_direction!,
+                aiResponse,
+                input,
+                newTurnNumber,
+                userPlan
+            ).catch((err) => console.error("[story-director] 재조정 실패:", err));
+        }
+
         // 플래시백 이벤트 마킹 (중복 방지)
         if (flashback) {
             updateEvent(flashback.eventId, { flashback_shown: true }).catch(() => {});
@@ -189,6 +223,7 @@ export async function POST(
             response: dbTurnResponse,
             flashback: flashback ?? undefined,
             locationChanged: aiResponse.location_changed ?? undefined,
+            isEnding: isEndingTurn || undefined,
         });
     } catch (error) {
         console.error("턴 처리 오류:", error);
@@ -253,6 +288,118 @@ async function generateSessionSummary(
         summary: parsed.summary,
         cliffhanger: parsed.cliffhanger ?? null,
     });
+}
+
+/** 스토리 작가 재조정 — 비동기 */
+async function updateStoryDirection(
+    worldId: string,
+    _currentDirection: StoryDirection,
+    aiResponse: GeneratedTurnResponse,
+    playerAction: string,
+    currentTurn: number,
+    userPlan: Plan
+): Promise<void> {
+    console.log("[story-director] 재조정 시작 — turn:", currentTurn, "importance:", aiResponse.event.importance);
+
+    const supabase = await createServerClient();
+
+    // C1: 레이스 컨디션 방지 — DB에서 최신 story_direction 재조회
+    const { data: freshWorld } = await supabase
+        .from("worlds")
+        .select("story_direction")
+        .eq("id", worldId)
+        .single();
+
+    const latestDirection = freshWorld?.story_direction as StoryDirection;
+    if (!latestDirection?.current_act) return;
+
+    // 최근 이벤트 조회 (최근 5개)
+    const { data: recentEvents } = await supabase
+        .from("events")
+        .select("description, importance")
+        .eq("world_id", worldId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+    // 최근 플레이어 행동 조회 (최근 5턴)
+    const { data: recentTurns } = await supabase
+        .from("turns")
+        .select("user_input")
+        .eq("world_id", worldId)
+        .order("turn_number", { ascending: false })
+        .limit(5);
+
+    // 최신 세션 요약
+    const { data: latestSummary } = await supabase
+        .from("session_summaries")
+        .select("summary")
+        .eq("world_id", worldId)
+        .order("to_turn", { ascending: false })
+        .limit(1)
+        .single();
+
+    const messages = buildStoryDirectionUpdateMessages(
+        latestDirection,
+        (recentEvents ?? []).map((e: { description: string; importance: number }) => `[중요도${e.importance}] ${e.description}`),
+        (recentTurns ?? []).map((t: { user_input: string }) => t.user_input),
+        currentTurn,
+        latestSummary?.summary ?? null
+    );
+
+    // W6: 내부 AI 호출은 외국어 보정 재시도 생략
+    const raw = await callAI(messages, userPlan, { temperature: 0.6, skipKoreanCorrection: true });
+
+    // C4: JSON.parse를 try-catch로 감싸 파싱 오류 방어
+    let parsedJson: unknown;
+    try {
+        parsedJson = JSON.parse(raw);
+    } catch {
+        console.error("[story-director] JSON 파싱 실패:", raw.slice(0, 200));
+        return;
+    }
+    const parsed = storyDirectionSchema.safeParse(parsedJson);
+
+    if (!parsed.success) {
+        console.warn("[story-director] 스키마 검증 실패:", parsed.error.flatten());
+        return;
+    }
+
+    const newDirection = parsed.data;
+
+    // AC5: 해결된 thread를 memory_embeddings에 아카이빙
+    if (newDirection.resolved_threads && newDirection.resolved_threads.length > 0) {
+        // W2: 성공적으로 아카이빙된 것만 추적하여 제거
+        const archivedThreads: string[] = [];
+        for (const thread of newDirection.resolved_threads) {
+            try {
+                const embedding = await createEmbeddingVector(thread);
+                await storeMemory({
+                    worldId,
+                    content: `[해결된 서사] ${thread}`,
+                    contentType: "resolved_thread",
+                    importance: 6,
+                    turnNumber: currentTurn,
+                    embedding,
+                });
+                archivedThreads.push(thread);
+                console.log("[story-director] thread 아카이빙:", thread.slice(0, 30));
+            } catch {
+                // 아카이빙 실패해도 계속 진행
+            }
+        }
+        // 성공적으로 아카이빙된 것만 제거
+        newDirection.resolved_threads = newDirection.resolved_threads.filter(
+            (t) => !archivedThreads.includes(t)
+        );
+    }
+
+    // story_direction 업데이트
+    await supabase
+        .from("worlds")
+        .update({ story_direction: newDirection })
+        .eq("id", worldId);
+
+    console.log("[story-director] 재조정 완료 — act:", newDirection.current_act, "tension:", newDirection.tension_level);
 }
 
 /** 턴 이미지 비동기 생성 → Storage 업로드 → DB 업데이트 */

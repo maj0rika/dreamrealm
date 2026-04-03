@@ -9,7 +9,7 @@ import {
     searchSimilarMemories,
 } from "@/lib/memory/embeddings";
 import { getFlashbackEvents } from "@/lib/db/events";
-import type { Entity, Location, Relationship, Turn, FlashbackInfo } from "@/types/world";
+import type { Entity, Location, Relationship, Turn, FlashbackInfo, StoryDirection } from "@/types/world";
 
 export interface ContextResult {
     contextText: string;
@@ -120,6 +120,7 @@ export async function buildContext(
         latestSummary,
         locations,
         flashback,
+        storyDirection: world.story_direction || null,
     });
 
     return { contextText, flashback };
@@ -136,6 +137,7 @@ function assembleContextText(params: {
     latestSummary: { summary: string; cliffhanger: string | null } | null;
     locations: Location[];
     flashback: FlashbackInfo | null;
+    storyDirection: StoryDirection | null;
 }): string {
     const {
         world,
@@ -148,6 +150,7 @@ function assembleContextText(params: {
         latestSummary,
         locations,
         flashback,
+        storyDirection,
     } = params;
 
     const sections: string[] = [];
@@ -227,6 +230,28 @@ ${npc.description}
                     : ""
             }`
         );
+    }
+
+    // 스토리 방향 (스토리 작가의 지시)
+    if (storyDirection && storyDirection.current_act) {
+        const directionParts = [`## 스토리 방향 (내레이터 참고용 — 플레이어에게 직접 노출하지 마)
+현재 막: ${storyDirection.current_act} | 긴장도: ${storyDirection.tension_level}`];
+
+        if (storyDirection.next_beats.length > 0) {
+            directionParts.push(`다음 전개: ${storyDirection.next_beats.join(", ")}`);
+        }
+        if (storyDirection.foreshadowing.length > 0) {
+            directionParts.push(`복선 (자연스럽게 삽입): ${storyDirection.foreshadowing.join(", ")}`);
+        }
+        if (storyDirection.avoid.length > 0) {
+            directionParts.push(`금지 (절대 하지 마): ${storyDirection.avoid.join(", ")}`);
+        }
+        if (storyDirection.current_act === "절정" || storyDirection.current_act === "결말") {
+            directionParts.push(`엔딩 윤곽: ${storyDirection.ending_outline}`);
+            directionParts.push(`[중요] 선택지에 "이야기를 마무리한다" 계열 옵션을 자연스럽게 포함해줘. 강제하지 말고 하나의 선택지로.`);
+        }
+
+        sections.push(directionParts.join("\n"));
     }
 
     // 플래시백 (이 장소의 과거 중요 이벤트 — AI에게 회상 서술 유도)

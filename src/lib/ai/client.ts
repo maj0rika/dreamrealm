@@ -44,6 +44,7 @@ export function getClient(userPlan: Plan): OpenAI {
 interface CallAIOptions {
     temperature?: number;
     maxTokens?: number;
+    skipKoreanCorrection?: boolean;
 }
 
 /** 통합 AI 호출 함수 — JSON 모드 강제, 외국어 감지 시 재시도 */
@@ -55,7 +56,7 @@ export async function callAI(
     const client = getClient(userPlan);
     const model = getModel(userPlan);
     // 기본 temperature를 0.5로 하향 — 외국어 토큰 샘플링 확률 감소
-    const { temperature = 0.5, maxTokens } = options;
+    const { temperature = 0.5, maxTokens, skipKoreanCorrection } = options;
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
         model,
@@ -75,7 +76,7 @@ export async function callAI(
             }
 
             // 외국어 감지 시 재시도 (첫 시도에만)
-            if (hasForeignText(content) && attempt === 0) {
+            if (hasForeignText(content) && attempt === 0 && !skipKoreanCorrection) {
                 console.warn("[callAI] 외국어 감지, correction prompt로 재시도");
                 // 이전 응답을 보여주고 한국어만으로 재작성 요청
                 const correctionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [

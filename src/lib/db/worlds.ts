@@ -47,7 +47,7 @@ export async function createWorld(params: {
 
 export async function updateWorld(
     worldId: string,
-    updates: Partial<Pick<World, "name" | "genre" | "world_spec" | "world_time" | "cover_image_url" | "art_style" | "turn_count" | "is_active">>
+    updates: Partial<Pick<World, "name" | "genre" | "world_spec" | "world_time" | "cover_image_url" | "art_style" | "turn_count" | "is_active" | "story_direction" | "completed_at">>
 ): Promise<World> {
     const supabase = await createServerClient();
     const { data, error } = await supabase

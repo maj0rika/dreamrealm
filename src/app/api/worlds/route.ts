@@ -6,7 +6,9 @@ import {
     createWorldRequestSchema,
     generatedWorldSpecSchema,
     turnResponseSchema,
+    storyDirectionSchema,
 } from "@/lib/ai/schemas";
+import { buildInitialStoryDirectionMessages } from "@/lib/ai/prompts/story-director";
 import { createWorld } from "@/lib/db/worlds";
 import { createLocation } from "@/lib/db/locations";
 import { createEntity } from "@/lib/db/entities";
@@ -202,7 +204,40 @@ export async function POST(request: Request) {
             });
         }
 
-        // 2단계: 시작 장면 생성
+        // 2단계: 스토리 작가 — 초기 story_direction 생성
+        const storyMessages = buildInitialStoryDirectionMessages(
+            generatedSpec.name,
+            generatedSpec.genre,
+            generatedSpec.description,
+            generatedSpec.rules,
+            allLocations.map((l) => l.name),
+            generatedSpec.npcs.map((n) => ({
+                name: n.name,
+                description: n.description,
+                core_drive: n.behavior_rules.core_drive,
+                secrets: n.behavior_rules.secrets,
+            })),
+            generatedSpec.protagonist.name
+        );
+
+        try {
+            const storyRaw = await callAI(storyMessages, userPlan, { temperature: 0.7 });
+            const storyParsed = storyDirectionSchema.safeParse(JSON.parse(storyRaw));
+            if (storyParsed.success) {
+                await supabase
+                    .from("worlds")
+                    .update({ story_direction: storyParsed.data })
+                    .eq("id", world.id);
+                console.log("[story-director] 초기 direction 생성 완료:", world.id);
+            } else {
+                console.warn("[story-director] 스키마 검증 실패, 기본값 사용");
+            }
+        } catch (err) {
+            console.error("[story-director] 초기 생성 실패:", err);
+            // 실패해도 월드 생성은 계속 진행
+        }
+
+        // 3단계: 시작 장면 생성
         const sceneMessages = buildOpeningSceneMessages(generatedSpec);
         const sceneRaw = await callAI(sceneMessages, userPlan, {
             temperature: 0.8,

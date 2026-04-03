@@ -101,6 +101,19 @@ export interface BehaviorRules {
     secrets: string[];
 }
 
+/** 스토리 작가 방향 지시서 */
+export interface StoryDirection {
+    current_act: "발단" | "위기" | "절정" | "결말";
+    tension_level: number;
+    active_threads: string[];
+    next_beats: string[];
+    foreshadowing: string[];
+    avoid: string[];
+    estimated_climax_turn: number;
+    ending_outline: string;
+    resolved_threads?: string[];
+}
+
 /** DB 테이블 행 타입들 */
 export interface World {
     id: string;
@@ -113,6 +126,8 @@ export interface World {
     art_style: string;
     turn_count: number;
     is_active: boolean;
+    story_direction: StoryDirection | null;
+    completed_at: string | null;
     created_at: string;
     updated_at: string;
 }
