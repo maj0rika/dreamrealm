@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ART_STYLE_OPTIONS, getDefaultArtStyle } from "@/lib/ai/art-styles";
+import type { ArtStyleOption } from "@/lib/ai/art-styles";
 
 const GENRES = [
     { id: "fantasy", emoji: "🏰", label: "판타지" },
@@ -28,12 +30,14 @@ const LOADING_STEPS = [
     "🎨 커버 이미지 생성 중...",
 ];
 
-type Step = "genre" | "prompt" | "loading";
+type Step = "genre" | "art-style" | "prompt" | "loading";
 
 export default function CreateWorldPage() {
     const router = useRouter();
     const [step, setStep] = useState<Step>("genre");
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
+    const [selectedArtStyle, setSelectedArtStyle] = useState<ArtStyleOption | null>(null);
+    const [defaultArtStyleId, setDefaultArtStyleId] = useState<string | null>(null);
     const [prompt, setPrompt] = useState("");
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -52,11 +56,24 @@ export default function CreateWorldPage() {
 
     const handleGenreSelect = useCallback((genreId: string) => {
         setSelectedGenre(genreId);
+        // 장르에 따른 기본 아트 스타일 자동 선택
+        const effectiveGenre = genreId === "custom" ? "fantasy" : genreId;
+        const defaultStyle = getDefaultArtStyle(effectiveGenre);
+        setSelectedArtStyle(defaultStyle);
+        setDefaultArtStyleId(defaultStyle.id);
+        setStep("art-style");
+    }, []);
+
+    const handleArtStyleSelect = useCallback((style: ArtStyleOption) => {
+        setSelectedArtStyle(style);
+    }, []);
+
+    const handleArtStyleConfirm = useCallback(() => {
         setStep("prompt");
     }, []);
 
     const handleCreate = useCallback(async () => {
-        if (!selectedGenre || !prompt.trim()) return;
+        if (!selectedGenre || !selectedArtStyle || !prompt.trim()) return;
 
         setStep("loading");
         setLoadingStep(0);
@@ -69,6 +86,7 @@ export default function CreateWorldPage() {
                 body: JSON.stringify({
                     genre: selectedGenre === "custom" ? "fantasy" : selectedGenre,
                     prompt: prompt.trim(),
+                    art_style: selectedArtStyle.id,
                 }),
             });
 
@@ -79,21 +97,7 @@ export default function CreateWorldPage() {
 
             const { worldId } = await res.json();
 
-            // 커버 이미지 폴링 (3초 간격, 최대 30초 — 타임아웃 시 이미지 없이 이동)
-            const imageStart = Date.now();
-            const pollCover = async (): Promise<void> => {
-                while (Date.now() - imageStart < 30000) {
-                    await new Promise((r) => setTimeout(r, 3000));
-                    const imgRes = await fetch(
-                        `/api/worlds/${worldId}/image?type=cover`
-                    );
-                    if (!imgRes.ok) continue;
-                    const data: { imageUrl: string | null } = await imgRes.json();
-                    if (data.imageUrl) return;
-                }
-            };
-
-            await pollCover();
+            // 커버 이미지는 비동기 생성 — 대시보드에서 자연스럽게 로드됨
             router.push(`/world/${worldId}`);
         } catch (err) {
             setError(
@@ -101,20 +105,24 @@ export default function CreateWorldPage() {
             );
             setStep("prompt");
         }
-    }, [selectedGenre, prompt, router]);
+    }, [selectedGenre, selectedArtStyle, prompt, router]);
+
+    const handleBack = useCallback(() => {
+        if (step === "art-style") {
+            setStep("genre");
+        } else if (step === "prompt") {
+            setStep("art-style");
+        } else {
+            router.back();
+        }
+    }, [step, router]);
 
     return (
         <div className="flex min-h-dvh flex-col bg-background">
             {/* 헤더 */}
             <header className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
                 <button
-                    onClick={() => {
-                        if (step === "prompt") {
-                            setStep("genre");
-                        } else {
-                            router.back();
-                        }
-                    }}
+                    onClick={handleBack}
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     disabled={step === "loading"}
                 >
@@ -156,7 +164,54 @@ export default function CreateWorldPage() {
                     </div>
                 )}
 
-                {/* Step 2: 프롬프트 입력 */}
+                {/* Step 2: 아트 스타일 선택 */}
+                {step === "art-style" && (
+                    <div className="w-full max-w-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <h2 className="mb-2 text-center text-2xl font-semibold text-foreground">
+                            아트 스타일을 골라주세요
+                        </h2>
+                        <p className="mb-8 text-center text-sm text-muted-foreground">
+                            세계의 시각적 분위기를 결정합니다
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            {ART_STYLE_OPTIONS.map((style) => (
+                                <button
+                                    key={style.id}
+                                    onClick={() => handleArtStyleSelect(style)}
+                                    className={`relative flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-all hover:border-[#7c6aff] hover:bg-accent ${
+                                        selectedArtStyle?.id === style.id
+                                            ? "border-[#7c6aff] bg-accent"
+                                            : "border-border"
+                                    }`}
+                                >
+                                    {/* 추천 배지 */}
+                                    {style.id === defaultArtStyleId && (
+                                        <span className="absolute -top-2 right-2 rounded-full bg-[#7c6aff] px-2 py-0.5 text-[10px] font-medium text-white">
+                                            추천
+                                        </span>
+                                    )}
+                                    <span className="text-sm font-medium text-foreground">
+                                        {style.label}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {style.description}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={handleArtStyleConfirm}
+                            disabled={!selectedArtStyle}
+                            className="mt-6 w-full rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            다음
+                        </button>
+                    </div>
+                )}
+
+                {/* Step 3: 프롬프트 입력 */}
                 {step === "prompt" && (
                     <div className="w-full max-w-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <h2 className="mb-2 text-center text-2xl font-semibold text-foreground">
@@ -204,7 +259,7 @@ export default function CreateWorldPage() {
                     </div>
                 )}
 
-                {/* Step 3: 로딩 */}
+                {/* Step 4: 로딩 */}
                 {step === "loading" && (
                     <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center animate-in fade-in duration-500">
                         {/* 회전 아이콘 */}

@@ -9,18 +9,29 @@ import { FreeInput } from "@/components/explore/FreeInput";
 import { LocationBadge } from "@/components/explore/LocationBadge";
 import type { World, Turn, TurnResponse, Choice, Mood, Location } from "@/types/world";
 
-// 분위기별 그라데이션
+// 분위기별 그라데이션 (상단 헤더 오버레이)
 const MOOD_GRADIENTS: Record<Mood, string> = {
-    tense: "from-red-950/80 to-zinc-950",
-    calm: "from-emerald-950/60 to-zinc-950",
-    mysterious: "from-purple-950/80 to-zinc-950",
-    joyful: "from-amber-950/60 to-zinc-950",
-    melancholic: "from-blue-950/80 to-zinc-950",
-    fearful: "from-red-950/90 to-zinc-950",
-    romantic: "from-pink-950/70 to-zinc-950",
-    comedic: "from-orange-950/60 to-zinc-950",
-    epic: "from-indigo-950/80 to-zinc-950",
-    neutral: "from-slate-900/60 to-zinc-950",
+    tense: "from-red-950/80 to-transparent",
+    calm: "from-emerald-950/60 to-transparent",
+    mysterious: "from-purple-950/80 to-transparent",
+    joyful: "from-amber-950/60 to-transparent",
+    melancholic: "from-blue-950/80 to-transparent",
+    fearful: "from-red-950/90 to-transparent",
+    romantic: "from-pink-950/70 to-transparent",
+    comedic: "from-orange-950/60 to-transparent",
+    epic: "from-indigo-950/80 to-transparent",
+    neutral: "from-slate-900/60 to-transparent",
+};
+
+// 장르 기반 폴백 그라데이션 (이미지 없을 때 풍부한 배경)
+const GENRE_GRADIENTS: Record<string, string> = {
+    fantasy: "from-indigo-900/60 via-purple-950/40 to-emerald-950/30",
+    "sci-fi": "from-cyan-900/50 via-blue-950/40 to-slate-950",
+    horror: "from-red-950/60 via-gray-950 to-black",
+    romance: "from-pink-900/40 via-rose-950/30 to-amber-950/20",
+    "slice-of-life": "from-sky-900/40 via-teal-950/30 to-emerald-950/20",
+    mystery: "from-slate-800/60 via-zinc-950 to-black",
+    "post-apocalyptic": "from-orange-950/40 via-stone-950 to-black",
 };
 
 interface ResumeData {
@@ -37,7 +48,7 @@ interface TurnApiResponse {
 export default function WorldExplorePage() {
     const { id } = useParams<{ id: string }>();
 
-    const [, setWorld] = useState<World | null>(null);
+    const [world, setWorld] = useState<World | null>(null);
     const [narration, setNarration] = useState("");
     const [choices, setChoices] = useState<Choice[]>([]);
     const [mood, setMood] = useState<Mood>("neutral");
@@ -91,34 +102,39 @@ export default function WorldExplorePage() {
         };
     }, []);
 
-    // 턴 이미지 비동기 폴링 (3초 간격, 최대 30초)
+    // 턴 이미지 비동기 폴링 (3초 간격, 최대 8회 = 24초)
     function pollTurnImage(turnNumber: number) {
         if (pollingRef.current) clearInterval(pollingRef.current);
 
         setImagePolling(true);
-        const startTime = Date.now();
+        let attempts = 0;
+        const maxAttempts = 8;
 
         pollingRef.current = setInterval(async () => {
-            if (Date.now() - startTime > 30000) {
-                // 30초 타임아웃 — 이미지 없이 진행
+            attempts++;
+            if (attempts > maxAttempts) {
                 if (pollingRef.current) clearInterval(pollingRef.current);
                 pollingRef.current = null;
                 setImagePolling(false);
                 return;
             }
 
-            const res = await fetch(
-                `/api/worlds/${id}/image?type=turn&turn=${turnNumber}`
-            );
-            if (!res.ok) return;
+            try {
+                const res = await fetch(
+                    `/api/worlds/${id}/image?type=turn&turn=${turnNumber}`
+                );
+                if (!res.ok) return;
 
-            const data: { imageUrl: string | null } = await res.json();
-            if (data.imageUrl) {
-                setImageUrl(data.imageUrl);
-                setImageLoaded(false);
-                if (pollingRef.current) clearInterval(pollingRef.current);
-                pollingRef.current = null;
-                setImagePolling(false);
+                const data: { imageUrl: string | null } = await res.json();
+                if (data.imageUrl) {
+                    setImageUrl(data.imageUrl);
+                    setImageLoaded(false);
+                    if (pollingRef.current) clearInterval(pollingRef.current);
+                    pollingRef.current = null;
+                    setImagePolling(false);
+                }
+            } catch {
+                // 네트워크 에러 무시
             }
         }, 3000);
     }
@@ -192,88 +208,103 @@ export default function WorldExplorePage() {
         );
     }
 
-    const gradient = MOOD_GRADIENTS[mood];
+    const genre = world?.genre ?? "fantasy";
+    const genreGradient = GENRE_GRADIENTS[genre] ?? GENRE_GRADIENTS.fantasy;
+    const moodGradient = MOOD_GRADIENTS[mood];
     const inputDisabled = processing || !typingDone;
 
     return (
-        <div className="flex min-h-screen flex-col bg-[#08080d]">
-            {/* 상단: 장면 이미지 or 분위기 그라데이션 + 위치 배지 */}
-            <div className="relative h-48 shrink-0 overflow-hidden md:h-56">
-                {/* 분위기 그라데이션 (항상 배경에 표시) */}
-                <div
-                    className={`absolute inset-0 bg-gradient-to-b ${gradient}`}
-                />
+        <div className="flex h-screen flex-col bg-[#08080d]">
+            {/* 상단 이미지 영역 (30~45vh) */}
+            <div className="relative h-[30vh] shrink-0 overflow-hidden md:h-[45vh]">
+                {/* 폴백: 장르 분위기 그라데이션 */}
+                <div className={`absolute inset-0 bg-gradient-to-br ${genreGradient}`} />
 
-                {/* 장면 이미지 — 로드 완료 시 페이드인 */}
+                {/* 분위기 오버레이 */}
+                <div className={`absolute inset-0 bg-gradient-to-b ${moodGradient}`} />
+
+                {/* 실제 이미지 */}
                 {imageUrl && (
                     <Image
                         src={imageUrl}
-                        alt="장면 이미지"
+                        alt="장면"
                         fill
                         className={`object-cover transition-opacity duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
                         onLoad={() => setImageLoaded(true)}
                         sizes="100vw"
+                        priority
                     />
                 )}
 
-                {/* 이미지 폴링 중 로딩 인디케이터 */}
+                {/* 이미지 로딩 shimmer */}
+                {imageUrl && !imageLoaded && (
+                    <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/[0.03] via-white/[0.06] to-white/[0.03]" />
+                )}
+
+                {/* 하단 페이드: 이미지→텍스트 영역 자연 전환 */}
+                <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#08080d] to-transparent" />
+
+                {/* 위치 배지 — 좌상단 */}
+                {locationName && <LocationBadge locationName={locationName} />}
+
+                {/* 이미지 생성 중 인디케이터 — 우상단 */}
                 {imagePolling && (
                     <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 backdrop-blur-sm">
                         <div className="size-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
                         <span className="text-xs text-white/60">이미지 생성 중</span>
                     </div>
                 )}
-
-                {/* 하단 페이드 */}
-                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#08080d] to-transparent" />
-                {/* 위치 배지 */}
-                {locationName && <LocationBadge locationName={locationName} />}
             </div>
 
-            {/* 중앙: 서술 */}
-            <div className="flex-1">
-                <div className="mx-auto max-w-2xl">
-                    {narration && (
-                        <NarrationDisplay
-                            key={narration}
-                            text={narration}
-                            onComplete={handleTypingComplete}
-                        />
-                    )}
-                </div>
-            </div>
-
-            {/* 하단: 선택지 + 자유 입력 */}
-            <div className="sticky bottom-0 mx-auto w-full max-w-2xl pb-6">
-                {/* 에러 표시 */}
-                {error && narration && (
-                    <p className="mb-3 text-center text-sm text-red-400">{error}</p>
-                )}
-
-                {/* 처리 중 표시 */}
-                {processing && (
-                    <div className="mb-3 flex items-center justify-center gap-2 text-sm text-zinc-500">
-                        <div className="size-4 animate-spin rounded-full border-2 border-[#7c6aff] border-t-transparent" />
-                        <span>생각하는 중...</span>
+            {/* 하단 텍스트/선택지 영역 */}
+            <div className="flex flex-1 flex-col overflow-hidden bg-[#08080d]">
+                {/* 서술 텍스트 — 스크롤 가능, 여유 패딩 */}
+                <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+                    <div className="mx-auto max-w-2xl">
+                        {narration && (
+                            <NarrationDisplay
+                                key={narration}
+                                text={narration}
+                                onComplete={handleTypingComplete}
+                            />
+                        )}
                     </div>
-                )}
+                </div>
 
-                {/* 선택지 */}
-                {choices.length > 0 && (
-                    <div className="mb-3">
-                        <ChoiceButtons
-                            choices={choices}
-                            onSelect={handleChoiceSelect}
+                {/* 선택지 + 입력 — 하단 고정 */}
+                <div className="shrink-0 border-t border-white/5 bg-[#08080d]/95 px-4 pb-6 pt-4 backdrop-blur-sm">
+                    <div className="mx-auto max-w-2xl">
+                        {/* 에러 표시 */}
+                        {error && narration && (
+                            <p className="mb-3 text-center text-sm text-red-400">{error}</p>
+                        )}
+
+                        {/* 처리 중 표시 */}
+                        {processing && (
+                            <div className="mb-3 flex items-center justify-center gap-2 text-sm text-zinc-500">
+                                <div className="size-4 animate-spin rounded-full border-2 border-[#7c6aff] border-t-transparent" />
+                                <span>생각하는 중...</span>
+                            </div>
+                        )}
+
+                        {/* 선택지 */}
+                        {choices.length > 0 && (
+                            <div className="mb-3">
+                                <ChoiceButtons
+                                    choices={choices}
+                                    onSelect={handleChoiceSelect}
+                                    disabled={inputDisabled}
+                                />
+                            </div>
+                        )}
+
+                        {/* 자유 입력 */}
+                        <FreeInput
+                            onSubmit={handleFreeInput}
                             disabled={inputDisabled}
                         />
                     </div>
-                )}
-
-                {/* 자유 입력 */}
-                <FreeInput
-                    onSubmit={handleFreeInput}
-                    disabled={inputDisabled}
-                />
+                </div>
             </div>
         </div>
     );

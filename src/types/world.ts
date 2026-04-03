@@ -110,6 +110,7 @@ export interface World {
     world_spec: WorldSpec;
     world_time: WorldTime;
     cover_image_url: string | null;
+    art_style: string | null;
     turn_count: number;
     is_active: boolean;
     created_at: string;

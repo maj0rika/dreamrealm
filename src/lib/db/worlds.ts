@@ -32,6 +32,7 @@ export async function createWorld(params: {
     world_spec: WorldSpec;
     world_time?: WorldTime;
     cover_image_url?: string;
+    art_style?: string;
 }): Promise<World> {
     const supabase = await createServerClient();
     const { data, error } = await supabase
@@ -46,7 +47,7 @@ export async function createWorld(params: {
 
 export async function updateWorld(
     worldId: string,
-    updates: Partial<Pick<World, "name" | "genre" | "world_spec" | "world_time" | "cover_image_url" | "turn_count" | "is_active">>
+    updates: Partial<Pick<World, "name" | "genre" | "world_spec" | "world_time" | "cover_image_url" | "art_style" | "turn_count" | "is_active">>
 ): Promise<World> {
     const supabase = await createServerClient();
     const { data, error } = await supabase
