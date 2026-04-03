@@ -23,6 +23,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MoreHorizontal, Trash2 } from "lucide-react";
+import { AsyncImage } from "@/components/ui/async-image";
 import type { World, Genre } from "@/types/world";
 
 // 장르별 그라데이션 색상
@@ -87,18 +88,15 @@ export function WorldCard({ world }: WorldCardProps) {
         <>
             <Card className="group overflow-hidden border-white/10 bg-[#111118] ring-0 transition-all hover:border-[#7c6aff]/30">
                 {/* 커버 이미지 or 그라데이션 */}
-                {world.cover_image_url ? (
-                    <div
-                        className="h-32 bg-cover bg-center"
-                        style={{
-                            backgroundImage: `url(${world.cover_image_url})`,
-                        }}
-                    />
-                ) : (
-                    <div
-                        className={`h-32 bg-gradient-to-br ${gradient}`}
-                    />
-                )}
+                <AsyncImage
+                    src={world.cover_image_url}
+                    alt={`${world.name} 커버`}
+                    className="h-32"
+                    fill
+                    fallback={
+                        <div className={`h-32 bg-gradient-to-br ${gradient}`} />
+                    }
+                />
 
                 <CardContent className="flex flex-col gap-3 p-4">
                     {/* 이름 + 장르 태그 + 메뉴 */}

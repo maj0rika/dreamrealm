@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { NarrationDisplay } from "@/components/explore/NarrationDisplay";
 import { ChoiceButtons } from "@/components/explore/ChoiceButtons";
 import { FreeInput } from "@/components/explore/FreeInput";
@@ -42,10 +43,13 @@ export default function WorldExplorePage() {
     const [mood, setMood] = useState<Mood>("neutral");
     const [locationName, setLocationName] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const [imagePolling, setImagePolling] = useState(false);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
     const [typingDone, setTypingDone] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // 세션 복원
     useEffect(() => {
@@ -80,14 +84,58 @@ export default function WorldExplorePage() {
         resume();
     }, [id]);
 
+    // 이미지 폴링 정리
+    useEffect(() => {
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+        };
+    }, []);
+
+    // 턴 이미지 비동기 폴링 (3초 간격, 최대 30초)
+    function pollTurnImage(turnNumber: number) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+
+        setImagePolling(true);
+        const startTime = Date.now();
+
+        pollingRef.current = setInterval(async () => {
+            if (Date.now() - startTime > 30000) {
+                // 30초 타임아웃 — 이미지 없이 진행
+                if (pollingRef.current) clearInterval(pollingRef.current);
+                pollingRef.current = null;
+                setImagePolling(false);
+                return;
+            }
+
+            const res = await fetch(
+                `/api/worlds/${id}/image?type=turn&turn=${turnNumber}`
+            );
+            if (!res.ok) return;
+
+            const data: { imageUrl: string | null } = await res.json();
+            if (data.imageUrl) {
+                setImageUrl(data.imageUrl);
+                setImageLoaded(false);
+                if (pollingRef.current) clearInterval(pollingRef.current);
+                pollingRef.current = null;
+                setImagePolling(false);
+            }
+        }, 3000);
+    }
+
     // 턴 응답 처리
     function applyTurnResponse(response: TurnResponse, turn: Turn) {
         setNarration(response.narration);
         setChoices(response.choices);
         setMood(response.mood);
         setTypingDone(false);
+        setImageLoaded(false);
+
         if (turn.image_url) {
             setImageUrl(turn.image_url);
+        } else if (response.generate_image) {
+            // 이미지가 아직 없지만 생성 중 — 폴링 시작
+            pollTurnImage(turn.turn_number);
         }
     }
 
@@ -151,16 +199,31 @@ export default function WorldExplorePage() {
         <div className="flex min-h-screen flex-col bg-[#08080d]">
             {/* 상단: 장면 이미지 or 분위기 그라데이션 + 위치 배지 */}
             <div className="relative h-48 shrink-0 overflow-hidden md:h-56">
-                {imageUrl ? (
-                    <div
-                        className="absolute inset-0 bg-cover bg-center"
-                        style={{ backgroundImage: `url(${imageUrl})` }}
-                    />
-                ) : (
-                    <div
-                        className={`absolute inset-0 bg-gradient-to-b ${gradient}`}
+                {/* 분위기 그라데이션 (항상 배경에 표시) */}
+                <div
+                    className={`absolute inset-0 bg-gradient-to-b ${gradient}`}
+                />
+
+                {/* 장면 이미지 — 로드 완료 시 페이드인 */}
+                {imageUrl && (
+                    <Image
+                        src={imageUrl}
+                        alt="장면 이미지"
+                        fill
+                        className={`object-cover transition-opacity duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+                        onLoad={() => setImageLoaded(true)}
+                        sizes="100vw"
                     />
                 )}
+
+                {/* 이미지 폴링 중 로딩 인디케이터 */}
+                {imagePolling && (
+                    <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 backdrop-blur-sm">
+                        <div className="size-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                        <span className="text-xs text-white/60">이미지 생성 중</span>
+                    </div>
+                )}
+
                 {/* 하단 페이드 */}
                 <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#08080d] to-transparent" />
                 {/* 위치 배지 */}

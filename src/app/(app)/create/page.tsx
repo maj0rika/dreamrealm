@@ -25,6 +25,7 @@ const LOADING_STEPS = [
     "주민 생성 중...",
     "역사 기록 중...",
     "문을 여는 중...",
+    "🎨 커버 이미지 생성 중...",
 ];
 
 type Step = "genre" | "prompt" | "loading";
@@ -77,6 +78,22 @@ export default function CreateWorldPage() {
             }
 
             const { worldId } = await res.json();
+
+            // 커버 이미지 폴링 (3초 간격, 최대 30초 — 타임아웃 시 이미지 없이 이동)
+            const imageStart = Date.now();
+            const pollCover = async (): Promise<void> => {
+                while (Date.now() - imageStart < 30000) {
+                    await new Promise((r) => setTimeout(r, 3000));
+                    const imgRes = await fetch(
+                        `/api/worlds/${worldId}/image?type=cover`
+                    );
+                    if (!imgRes.ok) continue;
+                    const data: { imageUrl: string | null } = await imgRes.json();
+                    if (data.imageUrl) return;
+                }
+            };
+
+            await pollCover();
             router.push(`/world/${worldId}`);
         } catch (err) {
             setError(
