@@ -301,14 +301,31 @@ async function generateAndSaveCoverImage(
     worldId: string,
     prompt: string
 ): Promise<void> {
+    console.log("[cover-image] generateImage 호출 중...");
     const imageUrl = await generateImage(prompt);
-    if (!imageUrl) return;
+    if (!imageUrl) {
+        console.error("[cover-image] generateImage 실패 — null 반환");
+        return;
+    }
+    console.log("[cover-image] 이미지 URL 획득:", imageUrl.slice(0, 80));
 
-    const publicUrl = await uploadImageFromUrl(imageUrl, `${worldId}/cover.webp`);
+    try {
+        console.log("[cover-image] Storage 업로드 시작...");
+        const publicUrl = await uploadImageFromUrl(imageUrl, `${worldId}/cover.webp`);
+        console.log("[cover-image] 업로드 성공:", publicUrl.slice(0, 80));
 
-    const supabase = await createServerClient();
-    await supabase
-        .from("worlds")
-        .update({ cover_image_url: publicUrl })
-        .eq("id", worldId);
+        const supabase = await createServerClient();
+        const { error } = await supabase
+            .from("worlds")
+            .update({ cover_image_url: publicUrl })
+            .eq("id", worldId);
+
+        if (error) {
+            console.error("[cover-image] DB 업데이트 실패:", error.message);
+        } else {
+            console.log("[cover-image] DB 업데이트 완료 — worldId:", worldId);
+        }
+    } catch (err) {
+        console.error("[cover-image] 업로드/DB 에러:", err);
+    }
 }
