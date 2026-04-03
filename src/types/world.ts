@@ -125,6 +125,8 @@ export interface Location {
     connected_to: string[];
     discovered: boolean;
     image_url: string | null;
+    visual_anchor: string;
+    image_seed: number | null;
     created_at: string;
     updated_at: string;
 }
@@ -208,6 +210,22 @@ export interface TurningPoint {
     alternatives: string[];
     consequences: string;
     created_at: string;
+}
+
+/** 플래시백 정보 (클라이언트 전달용) */
+export interface FlashbackInfo {
+    eventId: string;
+    description: string;
+    importance: number;
+    imageUrl: string | null;
+}
+
+/** 시간 경과 사건 (오프라인 세계 진행) */
+export interface TimePassageEvent {
+    time: string;
+    description: string;
+    importance: number;
+    entitiesInvolved: string[];
 }
 
 export interface TimePassageLog {

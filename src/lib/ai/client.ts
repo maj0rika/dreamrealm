@@ -28,7 +28,7 @@ function getGroqClient(): OpenAI {
 /** 플랜별 모델 선택 */
 export function getModel(userPlan: Plan): string {
     if (userPlan === "free") {
-        return "llama-3.3-70b-versatile";
+        return "qwen/qwen3-32b";
     }
     return "deepseek/deepseek-chat-v3";
 }
@@ -46,7 +46,7 @@ interface CallAIOptions {
     maxTokens?: number;
 }
 
-/** 통합 AI 호출 함수 — JSON 모드 강제, 1회 재시도 */
+/** 통합 AI 호출 함수 — JSON 모드 강제, 외국어 감지 시 재시도 */
 export async function callAI(
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     userPlan: Plan,
@@ -54,12 +54,14 @@ export async function callAI(
 ): Promise<string> {
     const client = getClient(userPlan);
     const model = getModel(userPlan);
-    const { temperature = 0.7, maxTokens } = options;
+    // 기본 temperature를 0.5로 하향 — 외국어 토큰 샘플링 확률 감소
+    const { temperature = 0.5, maxTokens } = options;
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
         model,
         messages,
         temperature,
+        top_p: 0.9,
         response_format: { type: "json_object" },
         ...(maxTokens ? { max_tokens: maxTokens } : {}),
     };
@@ -72,14 +74,27 @@ export async function callAI(
                 throw new Error("AI 응답이 비어있습니다");
             }
 
-            // 외국어 감지 시 로그 + sanitize 폴백 (재시도 없이 토큰 절약)
-            if (hasForeignText(content)) {
-                console.warn("[callAI] 외국어 감지됨, sanitize 적용");
+            // 외국어 감지 시 재시도 (첫 시도에만)
+            if (hasForeignText(content) && attempt === 0) {
+                console.warn("[callAI] 외국어 감지, correction prompt로 재시도");
+                // 이전 응답을 보여주고 한국어만으로 재작성 요청
+                const correctionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+                    ...messages,
+                    { role: "assistant", content },
+                    {
+                        role: "user",
+                        content: "위 응답에 한국어가 아닌 외국어(영어, 일본어, 중국어 등)가 섞여 있어. 모든 텍스트를 순수 한국어로만 다시 작성해. 외래어도 한글로 표기해. JSON 형식은 동일하게 유지해.",
+                    },
+                ];
+                params.messages = correctionMessages;
+                continue;
             }
+
+            // sanitize 폴백 (재시도 후에도 남은 외국어 제거)
             return sanitizeKoreanResponse(content);
         } catch (error) {
             if (attempt === 1) throw error;
-            // 첫 번째 실패 시 재시도
+            console.warn("[callAI] 에러 발생, 재시도:", error);
         }
     }
 

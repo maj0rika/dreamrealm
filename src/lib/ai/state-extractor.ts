@@ -128,11 +128,15 @@ export async function extractAndApplyState(
         .map((name) => entities.find((e) => e.name === name)?.id)
         .filter((id): id is string => id !== undefined);
 
+    // 주인공 현재 위치를 이벤트에 기록 (플래시백 트리거용)
+    const currentLocationId = protagonist.location_id ?? undefined;
+
     const event = await createEvent({
         world_id: worldId,
         description: aiResponse.event.description,
         importance: aiResponse.event.importance,
         entities_involved: participantIds,
+        location_id: currentLocationId,
     });
 
     // 중요 이벤트 → 임베딩 생성

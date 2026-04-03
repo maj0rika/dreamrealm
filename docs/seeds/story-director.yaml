@@ -1,0 +1,185 @@
+name: story-director
+description: 총괄 스토리 작가 AI — 큰 서사 뼈대 생성 + 사건 기반 방향 재조정 + 압축 + 엔딩 관리
+created_at: "2026-04-03"
+ambiguity_score: 0.17
+
+goal:
+  primary: >
+    narrator와 별개로 "총괄 스토리 작가 AI"를 도입하여,
+    월드 생성 시 큰 이야기 뼈대(story_direction)를 만들고,
+    중요 이벤트마다 방향을 재조정하며,
+    플레이어 행동에 적응하면서도 이야기의 방향성을 유지한다.
+    클라이맥스에 도달하면 엔딩을 제안하되, 강제 종료 없이 유저 선택으로 결정.
+  motivation: >
+    현재 narrator는 턴 단위로만 생각하여 큰 줄기 없이 중구난방으로 흘러감.
+    "카페 → 갑자기 도적 → 갑자기 축제" 같은 비일관적 전개.
+    스토리 작가가 맥락(컨텍스트)으로 방향을 잡아줘야
+    20~30턴 플레이 시 "하나의 이야기"와 "내 선택의 영향"을 체감할 수 있다.
+  success_metric: >
+    1) 20~30턴 플레이 시 "방향이 있는 이야기"가 느껴진다
+    2) 플레이어 선택이 나중에 영향을 준다는 인과가 체감된다
+    3) 클라이맥스 도달 시 자연스럽게 엔딩이 제안된다
+    4) 스토리가 비대해져도 컨텍스트가 터지지 않는다 (압축)
+
+constraints:
+  - id: C1
+    description: "스토리 작가는 직접 서술을 쓰지 않음 — story_direction(방향 지시서)만 생성"
+  - id: C2
+    description: "narrator는 story_direction을 컨텍스트로 받아서 자기 스타일로 풀어냄"
+  - id: C3
+    description: "스토리 작가 호출은 중요 이벤트 때만 (별도 API 호출). 평상시 턴에는 기존 direction 재사용"
+  - id: C4
+    description: "해결된 서사 줄기는 memory_embeddings에 1줄 요약으로 아카이빙 → 벡터 검색으로 필요 시 복원"
+  - id: C5
+    description: "story_direction 토큰이 임계치 초과 시 강제 압축"
+  - id: C6
+    description: "엔딩은 강제 없음 — 유저가 선택지로 결정. 안 고르면 이야기 계속"
+  - id: C7
+    description: "유저가 메인 스토리 무시 시: 선택지 유도 → 그래도 안 따르면 작가가 적응 (새 줄기)"
+  - id: C8
+    description: "기존 AI 파이프라인(narrator, context-builder, state-extractor) 구조 유지"
+
+acceptance_criteria:
+  # ── 스토리 작가 프롬프트 + 스키마 ──
+  - id: AC1
+    description: "월드 생성 시 스토리 작가 AI가 초기 story_direction을 생성한다"
+    details: >
+      월드 생성 API(POST /api/worlds)에서 world-generator 호출 후,
+      스토리 작가 AI를 별도 호출하여 초기 story_direction 생성:
+      {
+        current_act: "발단",
+        tension_level: 0.2,
+        active_threads: ["서준의 숨겨진 정체", "카페 뒷방의 비밀"],
+        next_beats: ["서준이 무심코 단서를 흘린다", "카페에서 이상한 소리"],
+        foreshadowing: ["뒷문 자물쇠에 긁힌 자국"],
+        avoid: ["정체를 직접 밝히기엔 너무 이르다"],
+        estimated_climax_turn: 35,
+        ending_outline: "어둠의 진실이 밝혀지고 선택의 순간이 온다"
+      }
+      worlds 테이블의 새 컬럼 story_direction JSONB에 저장.
+    test_strategy: "월드 생성 후 story_direction이 존재하고 active_threads가 1개 이상인지 확인"
+    priority: must
+
+  - id: AC2
+    description: "narrator 컨텍스트에 story_direction이 포함된다"
+    details: >
+      context-builder.ts에서 world.story_direction을 읽어
+      narrator 컨텍스트에 "## 스토리 방향" 섹션으로 삽입.
+      narrator는 next_beats를 참고하여 자연스럽게 서술에 반영.
+      avoid 항목은 하지 말아야 할 것으로 명시.
+    test_strategy: "빌드된 컨텍스트 텍스트에 story_direction 섹션이 포함되는지 확인"
+    priority: must
+
+  # ── 사건 기반 재조정 ──
+  - id: AC3
+    description: "중요 이벤트 발생 시 스토리 작가가 방향을 재조정한다"
+    details: >
+      트리거 조건 (OR):
+      - importance ≥ 5 이벤트 발생 후
+      - importance ≥ 7 (turning_point) 발생 후
+      - 10턴 session_summary 시점
+      스토리 작가 AI 별도 호출:
+      입력 — 현재 story_direction + 최근 사건들 + 플레이어 행동 패턴
+      출력 — 업데이트된 story_direction
+      turning_point(≥7) 시 current_act 전환 가능 (발단→위기→절정→결말).
+    test_strategy: "importance 7 이벤트 후 story_direction이 업데이트되었는지 확인"
+    priority: must
+
+  - id: AC4
+    description: "플레이어가 메인 스토리를 무시할 때 부드러운 유도 + 적응"
+    details: >
+      스토리 작가가 재조정 시 플레이어 행동 패턴을 분석:
+      - 최근 N턴에서 next_beats와 무관한 행동이 연속되면 "이탈" 판정
+      - 1차: next_beats에 유도 이벤트 추가 (NPC가 찾아옴, 사건이 다가옴)
+      - 2차: 그래도 이탈 지속 시 → active_threads를 플레이어 행동에 맞게 재구성
+      avoid에 "플레이어 의지에 반하는 강제 전개" 추가.
+    test_strategy: "3턴 연속 메인과 무관한 행동 후 next_beats에 유도 이벤트가 추가되는지 확인"
+    priority: must
+
+  # ── 압축 ──
+  - id: AC5
+    description: "해결된 서사 줄기가 memory_embeddings로 아카이빙된다"
+    details: >
+      스토리 작가 재조정 시 resolved_threads 생성.
+      각 해결된 thread를 1줄 요약 → createEmbeddingVector → memory_embeddings 저장.
+      story_direction에서 해당 thread 제거.
+      content_type = "resolved_thread"로 구분.
+    test_strategy: "thread 해결 후 memory_embeddings에 resolved_thread 타입 레코드 존재 확인"
+    priority: must
+
+  - id: AC6
+    description: "story_direction 토큰 임계치 초과 시 강제 압축된다"
+    details: >
+      story_direction을 JSON.stringify 후 대략적 토큰 수 추정 (문자수 / 3).
+      임계치: 1500 토큰 초과 시 압축 트리거.
+      압축 방법:
+      - 가장 오래된 foreshadowing 중 사용되지 않은 것 제거
+      - 완료된 next_beats 제거
+      - active_threads 중 3턴 이상 언급 안 된 것 → 아카이빙
+      스토리 작가에게 압축 요청 (기존 재조정 호출에 포함).
+    test_strategy: "story_direction이 1500토큰 이상일 때 압축 후 크기 감소 확인"
+    priority: must
+
+  # ── 엔딩 ──
+  - id: AC7
+    description: "클라이맥스 도달 시 엔딩이 자연스럽게 제안된다"
+    details: >
+      스토리 작가가 current_act를 "절정" 또는 "결말"로 전환하면:
+      - narrator에게 "엔딩 분위기 조성" 지시
+      - 선택지에 "이야기를 마무리한다" 계열 옵션 포함 지시
+      - 유저가 해당 선택지를 고르면 → 에필로그 생성 → 월드 완결 처리
+      - 유저가 다른 선택지를 고르면 → 이야기 계속 (새 chapter)
+      강제 종료 없음. 유저가 원하면 무한히 계속 가능.
+    test_strategy: "current_act가 '결말'일 때 선택지에 마무리 옵션이 포함되는지 확인"
+    priority: must
+
+  - id: AC8
+    description: "에필로그 생성 후 월드 완결 상태가 된다"
+    details: >
+      유저가 엔딩 선택 시:
+      - 스토리 작가가 에필로그 방향 생성
+      - narrator가 에필로그 서술 생성
+      - worlds 테이블에 completed_at TIMESTAMPTZ 기록
+      - 대시보드에서 "완결" 배지 표시
+      - 완결 후에도 "이어서 새 이야기 시작" 옵션 제공
+    test_strategy: "엔딩 선택 후 worlds.completed_at이 설정되고 대시보드에 완결 표시 확인"
+    priority: should
+
+tech_decisions:
+  - decision: "worlds 테이블에 story_direction JSONB + completed_at TIMESTAMPTZ 컬럼 추가"
+    rationale: "기존 world_spec과 분리하여 스토리 상태를 독립 관리"
+  - decision: "스토리 작가 프롬프트는 lib/ai/prompts/story-director.ts에 분리"
+    rationale: "narrator와 역할 분리 — 각각 독립적으로 개선 가능"
+  - decision: "스토리 작가 호출은 중요 이벤트 시에만 (importance ≥ 5, ≥ 7, 10턴 요약)"
+    rationale: "비용 최적화 — 평상시에는 기존 direction 재사용"
+  - decision: "스토리 작가도 동일한 callAI + Qwen3/DeepSeek 사용"
+    rationale: "별도 모델 불필요, 프롬프트 분리만으로 역할 구분"
+  - decision: "해결된 thread는 memory_embeddings에 content_type='resolved_thread'로 저장"
+    rationale: "기존 벡터 검색 인프라 활용, 필요 시 복원 가능"
+  - decision: "story_direction 압축 임계치 1500토큰 (약 4500자)"
+    rationale: "narrator 컨텍스트 전체의 ~15% 이내로 유지"
+
+out_of_scope:
+  - "분기별 완전히 다른 스토리라인 (멀티 엔딩 트리) — 현재는 단일 적응형 줄기"
+  - "유저가 직접 스토리 방향을 설정하는 UI"
+  - "스토리 작가의 실시간 스트리밍 출력"
+  - "복수 chapter를 넘나드는 시리즈 관리"
+  - "스토리 퀄리티 자동 평가/점수화"
+
+brownfield_context:
+  existing_patterns:
+    - "src/lib/ai/context-builder.ts — narrator 컨텍스트 조립 (story_direction 섹션 추가 대상)"
+    - "src/lib/ai/state-extractor.ts — importance 기반 이벤트 처리 (스토리 작가 트리거 추가)"
+    - "src/lib/ai/prompts/narrator.ts — story_direction을 참고하는 규칙 추가 대상"
+    - "src/app/api/worlds/route.ts — 월드 생성 시 초기 story_direction 생성 추가"
+    - "src/app/api/worlds/[id]/turn/route.ts — 이벤트 후 스토리 작가 호출 추가"
+    - "src/lib/memory/embeddings.ts — 해결된 thread 아카이빙에 재사용"
+    - "src/types/world.ts — StoryDirection 타입 추가, World에 story_direction 필드 추가"
+    - "supabase/migrations/ — 006 마이그레이션 (story_direction, completed_at)"
+    - "turning_points 테이블 — 이미 importance ≥ 7 분기점 추적 중"
+    - "session_summaries — 10턴 주기 요약, 스토리 작가 트리거로 활용"
+  style_conventions:
+    - "AI 프롬프트는 lib/ai/prompts/에 분리"
+    - "DB 쿼리는 lib/db/ 리포지토리 분리"
+    - "비동기 처리는 fire-and-forget + 에러 로깅"
+    - "Zod 스키마 검증"

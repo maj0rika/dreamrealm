@@ -44,6 +44,26 @@ export async function createEvent(params: {
     return data as Event;
 }
 
+/** 특정 장소에서 아직 플래시백되지 않은 중요 이벤트(importance ≥ 5) 조회 */
+export async function getFlashbackEvents(
+    worldId: string,
+    locationId: string
+): Promise<Event[]> {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .eq("world_id", worldId)
+        .eq("location_id", locationId)
+        .eq("flashback_shown", false)
+        .gte("importance", 5)
+        .order("importance", { ascending: false })
+        .limit(1);
+
+    if (error) throw error;
+    return data as Event[];
+}
+
 export async function updateEvent(
     eventId: string,
     updates: Partial<Pick<Event, "description" | "importance" | "flashback_shown">>

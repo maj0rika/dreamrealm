@@ -26,6 +26,7 @@ const behaviorRulesSchema = z.object({
 const generatedLocationSchema = z.object({
     name: z.string(),
     description: z.string(),
+    visual_anchor: z.string().default(""),
     properties: z.record(z.string(), z.unknown()).optional(),
     connected_to_names: z.array(z.string()),
 });
@@ -113,6 +114,41 @@ export const turnResponseSchema = z.object({
 });
 
 export type GeneratedTurnResponse = z.infer<typeof turnResponseSchema>;
+
+/** 시간 경과 사건 스키마 */
+const timePassageEventSchema = z.object({
+    time_description: z.string(),
+    description: z.string(),
+    importance: z.number().min(1).max(10).default(3),
+    entities_involved: z.array(z.string()).default([]),
+    location_name: z.string().optional().default(""),
+    state_changes: z.object({
+        entity_moves: z.array(z.object({
+            entity_name: z.string(),
+            to_location: z.string(),
+        })).default([]),
+        relationship_changes: z.array(z.object({
+            entity_name: z.string(),
+            target_name: z.string(),
+            delta: z.number(),
+            reason: z.string(),
+        })).default([]),
+        items_added: z.array(z.string()).default([]),
+        items_removed: z.array(z.string()).default([]),
+    }).default({
+        entity_moves: [],
+        relationship_changes: [],
+        items_added: [],
+        items_removed: [],
+    }),
+});
+
+export const timePassageResponseSchema = z.object({
+    events: z.array(timePassageEventSchema).default([]),
+    summary: z.string().default(""),
+});
+
+export type TimePassageResponse = z.infer<typeof timePassageResponseSchema>;
 
 /** API 요청 스키마 */
 export const createWorldRequestSchema = z.object({

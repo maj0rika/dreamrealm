@@ -16,11 +16,46 @@ const GENRES = [
     { id: "custom", emoji: "✏️", label: "직접입력" },
 ] as const;
 
-const EXAMPLE_PROMPTS = [
-    "고대 마법이 깨어나는 숲속 마을에서...",
-    "우주 정거장에서 미지의 신호를 감지하고...",
-    "전학 첫날, 비밀 동아리의 초대장을 받고...",
-];
+const GENRE_PROMPTS: Record<string, string[]> = {
+    fantasy: [
+        "천년 봉인이 풀린 고대 숲의 마을, 마법이 다시 깨어나며 숲 속 유적에서 이상한 빛이 새어 나온다. 마을 사람들은 점점 불안해하고, 숲 깊은 곳에서 정체불명의 울음소리가 밤마다 들려온다.",
+        "용의 등뼈로 이루어진 산맥 아래 광산 도시, 드워프와 인간이 공존하지만 최근 광맥에서 발굴된 검은 수정이 광부들을 하나둘 미치게 만들고 있다.",
+        "떠다니는 섬들 사이를 비행선으로 오가는 세계, 하늘 해적단이 무역로를 위협하고 있고, 전설 속 '하늘의 심장'을 찾는 모험가 길드에 가입하게 된다.",
+    ],
+    "sci-fi": [
+        "태양계 외곽 목성 궤도의 연구 정거장, 심우주에서 수신된 규칙적 신호를 분석하던 중 정거장의 AI가 이상 행동을 보이기 시작한다. 승무원들 사이에 불신이 퍼진다.",
+        "지구가 멸망한 뒤 세대 우주선 '아크호' 안에서 태어난 3세대 주민, 선장이 감추고 있는 비밀 구역과 우주선의 진짜 목적지에 대한 소문이 돈다.",
+        "사이버네틱 도시 네오서울 2187, 기억을 사고파는 블랙마켓에서 누군가의 기억 조각을 우연히 손에 넣게 되면서 거대 기업의 음모에 휘말린다.",
+    ],
+    romance: [
+        "해안가 작은 마을의 오래된 서점, 매일 같은 시간에 찾아오는 정체불명의 단골손님과 점점 가까워진다. 하지만 그 사람에게는 이 마을에 온 숨겨진 이유가 있다.",
+        "파리 유학 중 우연히 들어간 골목의 빈티지 카페, 그곳의 바리스타와 서툰 프랑스어로 대화를 나누며 시작되는 이야기. 카페에는 모든 연인에게 한 가지 시련을 내린다는 전설이 있다.",
+        "같은 아파트 옥상 정원에서 밤마다 마주치는 이웃, 서로의 이름도 모른 채 별을 보며 나누는 대화가 깊어지지만, 곧 둘 중 한 명이 이사를 가야 한다는 사실을 알게 된다.",
+    ],
+    horror: [
+        "폐교된 시골 학교에 다큐멘터리 촬영차 찾아온 일행, 밤이 되자 교실마다 칠판에 알 수 없는 글씨가 나타나고, 촬영 영상에 있을 수 없는 인물이 찍혀 있다.",
+        "깊은 산속 할머니 집에 내려온 주말, 마을 사람들은 해 지면 절대 밖에 나가지 말라 경고한다. 첫날 밤, 창밖에서 내 이름을 부르는 목소리가 들린다.",
+        "빌라 지하 창고에서 발견한 오래된 일기장, 30년 전 이 건물에서 일어난 실종 사건의 기록이 적혀 있고, 일기의 마지막 장에는 오늘 날짜가 써 있다.",
+    ],
+    "slice-of-life": [
+        "전학 첫날, 교실 뒷자리에 앉게 되었는데 옆자리 학생이 몰래 쪽지를 건네며 비밀 동아리 초대장이라고 속삭인다. 방과 후 지도에 표시된 옥상 창고를 찾아가면 그곳에는...",
+        "시골 바닷가 마을로 전학 온 고등학생, 학교 뒤 절벽 위 등대에 혼자 사는 신비로운 선배가 있다는 소문. 매일 방과 후 등대에서 새어 나오는 피아노 소리를 따라가게 된다.",
+        "졸업 직전, 학교 타임캡슐을 열었는데 1년 전의 내가 쓴 편지에는 기억나지 않는 약속이 적혀 있다. 편지 속 단서를 따라가며 잊고 있던 친구와의 추억을 되짚어간다.",
+    ],
+    mystery: [
+        "강남 한복판 고급 호텔의 밀실에서 발견된 변사체, 방에는 잠긴 문과 창문뿐이고 CCTV에는 아무도 들어간 기록이 없다. 호텔 투숙객 중 한 명으로서 수사에 휘말린다.",
+        "매주 금요일 자정에만 나타나는 심야 라디오 방송, DJ가 청취자의 비밀을 읽어주는데, 어느 날 방송에서 내 비밀이 흘러나온다. 이 방송국의 위치를 추적하기 시작한다.",
+        "유명 추리 작가가 사라지기 전 마지막으로 보낸 원고, 소설 속 살인 사건과 실제 사건이 기묘하게 일치한다. 원고의 다음 챕터가 다음 사건의 예고인 것 같다.",
+    ],
+    "post-apocalyptic": [
+        "차원의 틈이 열려 현대 도시 한복판에 중세 판타지 세계가 겹쳐진 세상, 강남역 앞에 드래곤이 둥지를 틀고 한강 다리 위에서 기사단과 경찰이 합동 순찰을 한다.",
+        "게임 같은 시스템이 현실에 덮어씌워진 세계, 사람들 머리 위에 레벨이 뜨고 퀘스트 알림이 올린다. 하지만 '레벨 0'인 나만 이 시스템의 버그를 볼 수 있다.",
+        "어느 날 눈을 떠보니 판타지 소설 속 조연이 되어 있다. 원작에서 3화 만에 죽는 캐릭터인데, 죽음을 피하면서 원작 스토리를 바꾸지 않아야 하는 줄타기가 시작된다.",
+    ],
+    custom: [
+        "원하는 세계를 자유롭게 묘사해주세요. 배경, 분위기, 시작 상황, 핵심 갈등을 구체적으로 적을수록 더 풍부한 세계가 만들어집니다.",
+    ],
+};
 
 const LOADING_STEPS = [
     "세계 설계 중...",
@@ -212,7 +247,9 @@ export default function CreateWorldPage() {
                 )}
 
                 {/* Step 3: 프롬프트 입력 */}
-                {step === "prompt" && (
+                {step === "prompt" && (() => {
+                    const genreExamples = GENRE_PROMPTS[selectedGenre ?? "custom"] ?? GENRE_PROMPTS.custom;
+                    return (
                     <div className="w-full max-w-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <h2 className="mb-2 text-center text-2xl font-semibold text-foreground">
                             세계를 묘사해주세요
@@ -224,23 +261,26 @@ export default function CreateWorldPage() {
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            placeholder="예: 고대 마법이 깨어나는 숲속 마을에서..."
-                            rows={4}
+                            placeholder={genreExamples[0] ?? "원하는 세계를 자유롭게 묘사해주세요..."}
+                            rows={5}
                             className="mb-4 w-full resize-none rounded-xl border border-border bg-card p-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             maxLength={1000}
                         />
 
-                        {/* 예시 문구 */}
-                        <div className="mb-6 flex flex-wrap gap-2">
-                            {EXAMPLE_PROMPTS.map((example) => (
-                                <button
-                                    key={example}
-                                    onClick={() => setPrompt(example)}
-                                    className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                                >
-                                    {example}
-                                </button>
-                            ))}
+                        {/* 장르별 예시 문구 */}
+                        <div className="mb-6 space-y-2">
+                            <p className="text-xs text-muted-foreground">예시를 눌러 바로 사용하거나, 참고해서 직접 써보세요</p>
+                            <div className="flex flex-col gap-2">
+                                {genreExamples.map((example) => (
+                                    <button
+                                        key={example}
+                                        onClick={() => setPrompt(example)}
+                                        className="rounded-lg border border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                                    >
+                                        {example}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {error && (
@@ -257,7 +297,8 @@ export default function CreateWorldPage() {
                             세계 생성하기
                         </button>
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* Step 4: 로딩 */}
                 {step === "loading" && (

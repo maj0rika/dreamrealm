@@ -62,8 +62,9 @@ interface ReplicatePrediction {
 /**
  * Replicate FLUX.1 Schnell 모델로 이미지 생성
  * 성공: 이미지 URL 반환, 실패: null
+ * @param seed 고정 시드 — 같은 장소에서 일관된 이미지 생성용
  */
-export async function generateImage(prompt: string): Promise<string | null> {
+export async function generateImage(prompt: string, seed?: number): Promise<string | null> {
     const token = process.env.REPLICATE_API_TOKEN;
     if (!token) {
         console.error("[image-generator] REPLICATE_API_TOKEN이 설정되지 않았습니다");
@@ -89,6 +90,7 @@ export async function generateImage(prompt: string): Promise<string | null> {
                     aspect_ratio: "16:9",
                     output_format: "webp",
                     output_quality: 80,
+                    ...(seed !== undefined && { seed }),
                 },
             }),
         });

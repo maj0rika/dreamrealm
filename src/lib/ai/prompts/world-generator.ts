@@ -25,6 +25,7 @@ const SYSTEM_PROMPT = `너는 한국어 인터랙티브 픽션 세계 아키텍�
   "starting_location": {
     "name": "한국어 시작 장소명",
     "description": "한국어 장소 설명 2~3문장. 분위기, 냄새, 소리 포함",
+    "visual_anchor": "English only. 50-80 words. Permanent visual identity of this location: key landmarks, architecture, vegetation, terrain, colors, textures, materials. These elements NEVER change between images. Example: 'A cobblestone plaza with a massive ancient oak tree at center, twisted moss-covered branches reaching outward, surrounded by red clay-roofed stone buildings with iron lanterns, cracked stone fountain to the east, ivy climbing the western wall'",
     "properties": {"atmosphere": "...", "danger_level": 1},
     "connected_to_names": ["한국어 연결 장소1", "한국어 연결 장소2"]
   },
@@ -32,6 +33,7 @@ const SYSTEM_PROMPT = `너는 한국어 인터랙티브 픽션 세계 아키텍�
     {
       "name": "한국어 장소명",
       "description": "한국어 장소 설명",
+      "visual_anchor": "English only. 50-80 words describing permanent visual features.",
       "properties": {"atmosphere": "...", "danger_level": 1},
       "connected_to_names": ["한국어 연결 장소"]
     }
@@ -72,7 +74,7 @@ export function buildWorldGeneratorMessages(
         { role: "system", content: SYSTEM_PROMPT },
         {
             role: "user",
-            content: `장르: ${genre}\n\n세계 설명: ${userPrompt}\n\n위 내용을 바탕으로 한국어로 월드를 설계해줘.`,
+            content: `장르: ${genre}\n\n세계 설명: ${userPrompt}\n\n위 내용을 바탕으로 월드를 설계해줘.\n\n[필수] name, description, rules, 장소명, NPC명, 성격, 비밀 등 모든 텍스트는 한국어로만 작성. 영어, 일본어, 중국어 단어를 절대 사용하지 마. 외래어는 반드시 한글로 표기. 영어 허용: name_en, image_prompt, visual_anchor, tone, genre, entity_type만.`,
         },
     ];
 }

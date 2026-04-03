@@ -4,9 +4,12 @@ import { callAI } from "@/lib/ai/client";
 import { buildContext } from "@/lib/ai/context-builder";
 import { buildNarratorMessages } from "@/lib/ai/prompts/narrator";
 import { extractAndApplyState } from "@/lib/ai/state-extractor";
+import { updateEvent } from "@/lib/db/events";
 import { turnResponseSchema } from "@/lib/ai/schemas";
 import { createTurn } from "@/lib/db/turns";
 import { updateWorld, getWorld } from "@/lib/db/worlds";
+import { getWorldLocations } from "@/lib/db/locations";
+import { getWorldEntities } from "@/lib/db/entities";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/upload";
 import type { TurnResponse, Mood } from "@/types/world";
@@ -63,8 +66,8 @@ export async function POST(
             .single();
         const userPlan = profile?.plan ?? "free";
 
-        // 컨텍스트 조립
-        const contextText = await buildContext(worldId, input);
+        // 컨텍스트 조립 (플래시백 정보 포함)
+        const { contextText, flashback } = await buildContext(worldId, input);
 
         // 내레이터 AI 호출
         const messages = buildNarratorMessages(contextText, input);
@@ -141,14 +144,31 @@ export async function POST(
         // turn_count 증가
         await updateWorld(worldId, { turn_count: newTurnNumber });
 
-        // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget) — 아트 스타일 자동 append
+        // 이미지 생성: 3층 프롬프트 (앵커 + 가변 + 아트스타일) + 장소 시드 고정
         console.log("[turn] generate_image:", aiResponse.generate_image, "location_changed:", aiResponse.location_changed, "image_prompt:", aiResponse.image_prompt?.slice(0, 50));
         if (aiResponse.generate_image && aiResponse.image_prompt) {
-            const imagePromptWithStyle = aiResponse.image_prompt + ", " + world.art_style;
+            // 주인공 현재 위치의 시각 앵커 + 시드 조회
+            const [locations, entities] = await Promise.all([
+                getWorldLocations(worldId),
+                getWorldEntities(worldId),
+            ]);
+            const protagonist = entities.find((e) => e.entity_type === "protagonist");
+            const currentLocation = protagonist?.location_id
+                ? locations.find((l) => l.id === protagonist.location_id)
+                : null;
+
+            // Layer 1: 시각 앵커 (고정) + Layer 2: 가변 요소 (AI 생성) + Layer 3: 아트 스타일 (고정)
+            const layers = [
+                currentLocation?.visual_anchor,
+                aiResponse.image_prompt,
+                world.art_style,
+            ].filter(Boolean).join(", ");
+
             generateAndSaveTurnImage(
                 worldId,
                 newTurnNumber,
-                imagePromptWithStyle
+                layers,
+                currentLocation?.image_seed ?? undefined
             ).catch((err) => console.error("[turn-image] 생성 실패:", err));
         }
 
@@ -159,7 +179,17 @@ export async function POST(
             });
         }
 
-        return Response.json({ turn, response: dbTurnResponse });
+        // 플래시백 이벤트 마킹 (중복 방지)
+        if (flashback) {
+            updateEvent(flashback.eventId, { flashback_shown: true }).catch(() => {});
+        }
+
+        return Response.json({
+            turn,
+            response: dbTurnResponse,
+            flashback: flashback ?? undefined,
+            locationChanged: aiResponse.location_changed ?? undefined,
+        });
     } catch (error) {
         console.error("턴 처리 오류:", error);
         return Response.json(
@@ -229,10 +259,11 @@ async function generateSessionSummary(
 async function generateAndSaveTurnImage(
     worldId: string,
     turnNumber: number,
-    prompt: string
+    prompt: string,
+    seed?: number
 ): Promise<void> {
-    console.log("[turn-image] 생성 시작 — turn:", turnNumber);
-    const imageUrl = await generateImage(prompt);
+    console.log("[turn-image] 생성 시작 — turn:", turnNumber, "seed:", seed);
+    const imageUrl = await generateImage(prompt, seed);
     if (!imageUrl) {
         console.error("[turn-image] 이미지 생성 실패 — null");
         return;

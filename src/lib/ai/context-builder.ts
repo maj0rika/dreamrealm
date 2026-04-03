@@ -8,16 +8,22 @@ import {
     createEmbeddingVector,
     searchSimilarMemories,
 } from "@/lib/memory/embeddings";
-import type { Entity, Location, Relationship, Turn } from "@/types/world";
+import { getFlashbackEvents } from "@/lib/db/events";
+import type { Entity, Location, Relationship, Turn, FlashbackInfo } from "@/types/world";
+
+export interface ContextResult {
+    contextText: string;
+    flashback: FlashbackInfo | null;
+}
 
 /**
  * 턴 처리를 위한 컨텍스트 조립
- * 월드 정보 + 현재 위치 + NPC + 관계 + 벡터 검색 + 최근 턴 + 세션 요약
+ * 월드 정보 + 현재 위치 + NPC + 관계 + 벡터 검색 + 최근 턴 + 세션 요약 + 플래시백
  */
 export async function buildContext(
     worldId: string,
     userInput: string
-): Promise<string> {
+): Promise<ContextResult> {
     const supabase = await createServerClient();
 
     // 병렬로 데이터 조회
@@ -73,8 +79,37 @@ export async function buildContext(
         .limit(1)
         .single();
 
+    // 플래시백 확인: 현재 위치에 미표시 중요 이벤트가 있는지
+    let flashback: FlashbackInfo | null = null;
+    if (currentLocation) {
+        try {
+            const flashbackEvents = await getFlashbackEvents(worldId, currentLocation.id);
+            if (flashbackEvents.length > 0) {
+                const fbEvent = flashbackEvents[0];
+                // 해당 이벤트의 턴 이미지 조회
+                let fbImageUrl: string | null = null;
+                if (fbEvent.turn_id) {
+                    const { data: fbTurn } = await supabase
+                        .from("turns")
+                        .select("image_url")
+                        .eq("id", fbEvent.turn_id)
+                        .single();
+                    fbImageUrl = fbTurn?.image_url ?? null;
+                }
+                flashback = {
+                    eventId: fbEvent.id,
+                    description: fbEvent.description,
+                    importance: fbEvent.importance,
+                    imageUrl: fbImageUrl,
+                };
+            }
+        } catch {
+            // 플래시백 조회 실패 시 무시
+        }
+    }
+
     // 컨텍스트 텍스트 조립
-    return assembleContextText({
+    const contextText = assembleContextText({
         world,
         currentLocation,
         protagonist,
@@ -84,7 +119,10 @@ export async function buildContext(
         relevantMemories,
         latestSummary,
         locations,
+        flashback,
     });
+
+    return { contextText, flashback };
 }
 
 function assembleContextText(params: {
@@ -97,6 +135,7 @@ function assembleContextText(params: {
     relevantMemories: string[];
     latestSummary: { summary: string; cliffhanger: string | null } | null;
     locations: Location[];
+    flashback: FlashbackInfo | null;
 }): string {
     const {
         world,
@@ -108,6 +147,7 @@ function assembleContextText(params: {
         relevantMemories,
         latestSummary,
         locations,
+        flashback,
     } = params;
 
     const sections: string[] = [];
@@ -187,6 +227,14 @@ ${npc.description}
                     : ""
             }`
         );
+    }
+
+    // 플래시백 (이 장소의 과거 중요 이벤트 — AI에게 회상 서술 유도)
+    if (flashback) {
+        sections.push(`## 플래시백 (이 장소에서 과거에 일어난 일)
+"${flashback.description}"
+→ 서술 시작 부분에 "문득 기억이 떠오른다..." 또는 "이곳에 서니 예전 일이 떠오른다..." 식으로 자연스럽게 회상을 포함해줘.
+한두 문장이면 충분해. 회상 후 현재 장면으로 자연스럽게 돌아와.`);
     }
 
     // 최근 턴

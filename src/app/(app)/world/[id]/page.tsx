@@ -7,7 +7,8 @@ import { NarrationDisplay } from "@/components/explore/NarrationDisplay";
 import { ChoiceButtons } from "@/components/explore/ChoiceButtons";
 import { FreeInput } from "@/components/explore/FreeInput";
 import { LocationBadge } from "@/components/explore/LocationBadge";
-import type { World, Turn, TurnResponse, Choice, Mood, Location } from "@/types/world";
+import { TimelineOverlay } from "@/components/explore/TimelineOverlay";
+import type { World, Turn, TurnResponse, Choice, Mood, Location, FlashbackInfo, TimePassageEvent } from "@/types/world";
 
 // 분위기별 그라데이션 (상단 헤더 오버레이)
 const MOOD_GRADIENTS: Record<Mood, string> = {
@@ -38,11 +39,14 @@ interface ResumeData {
     world: World;
     lastTurn: Turn | null;
     currentLocation: Location | null;
+    timePassageEvents?: TimePassageEvent[];
 }
 
 interface TurnApiResponse {
     turn: Turn;
     response: TurnResponse;
+    flashback?: FlashbackInfo;
+    locationChanged?: string;
 }
 
 export default function WorldExplorePage() {
@@ -58,6 +62,9 @@ export default function WorldExplorePage() {
     const [prevImageUrl, setPrevImageUrl] = useState<string | null>(null);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [imagePolling, setImagePolling] = useState(false);
+    const [flashbackImageUrl, setFlashbackImageUrl] = useState<string | null>(null);
+    const [flashbackVisible, setFlashbackVisible] = useState(false);
+    const [timePassageEvents, setTimePassageEvents] = useState<TimePassageEvent[] | null>(null);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
     const [typingDone, setTypingDone] = useState(false);
@@ -111,6 +118,11 @@ export default function WorldExplorePage() {
             // 커버 이미지가 아직 없으면 폴링 (비동기 생성 대기)
             if (!data.world.cover_image_url && !data.lastTurn?.image_url) {
                 pollCoverImage(id);
+            }
+
+            // 시간 경과 사건이 있으면 타임라인 표시
+            if (data.timePassageEvents && data.timePassageEvents.length > 0) {
+                setTimePassageEvents(data.timePassageEvents);
             }
 
             setLoading(false);
@@ -190,6 +202,16 @@ export default function WorldExplorePage() {
         }, 5000); // 첫 폴링 5초 딜레이
     }
 
+    // 플래시백 연출: 과거 이미지가 반투명으로 2.5초 비친 후 페이드아웃
+    function triggerFlashback(fbImageUrl: string) {
+        setFlashbackImageUrl(fbImageUrl);
+        setFlashbackVisible(true);
+        setTimeout(() => {
+            setFlashbackVisible(false);
+            setTimeout(() => setFlashbackImageUrl(null), 700); // 페이드아웃 후 정리
+        }, 2500);
+    }
+
     // 턴 응답 처리
     function applyTurnResponse(response: TurnResponse, turn: Turn) {
         setNarrationInstant(false);
@@ -225,6 +247,14 @@ export default function WorldExplorePage() {
         if (res.ok) {
             const data: TurnApiResponse = await res.json();
             applyTurnResponse(data.response, data.turn);
+            // 위치 변경 시 배지 업데이트
+            if (data.locationChanged) {
+                setLocationName(data.locationChanged);
+            }
+            // 플래시백 이미지 연출
+            if (data.flashback?.imageUrl) {
+                triggerFlashback(data.flashback.imageUrl);
+            }
         } else {
             setError("응답을 생성하지 못했습니다. 다시 시도해 주세요.");
         }
@@ -269,7 +299,15 @@ export default function WorldExplorePage() {
     const inputDisabled = processing || !typingDone;
 
     return (
-        <div className="flex h-screen flex-col bg-[#08080d]">
+        <div className="relative flex h-screen flex-col bg-[#08080d]">
+            {/* 시간 경과 타임라인 오버레이 */}
+            {timePassageEvents && (
+                <TimelineOverlay
+                    events={timePassageEvents}
+                    onDismiss={() => setTimePassageEvents(null)}
+                />
+            )}
+
             {/* 상단 이미지 영역 (30~45vh) */}
             <div className="relative h-[30vh] shrink-0 overflow-hidden md:h-[45vh]">
                 {/* 폴백: 장르 분위기 그라데이션 */}
@@ -302,6 +340,18 @@ export default function WorldExplorePage() {
                         }}
                         sizes="100vw"
                         priority
+                    />
+                )}
+
+                {/* 플래시백 오버레이 — 과거 이미지 반투명 비침 */}
+                {flashbackImageUrl && (
+                    <Image
+                        src={flashbackImageUrl}
+                        alt="기억"
+                        fill
+                        className={`object-cover transition-opacity duration-700 ${flashbackVisible ? "opacity-50" : "opacity-0"}`}
+                        sizes="100vw"
+                        style={{ filter: "sepia(0.3) brightness(0.8)" }}
                     />
                 )}
 

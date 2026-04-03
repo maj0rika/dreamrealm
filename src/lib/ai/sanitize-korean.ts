@@ -1,17 +1,28 @@
 /**
- * AI 응답 JSON에서 사용자 대면 텍스트의 외국어를 감지한다.
- * 감지 시 callAI에서 재시도하여 깨끗한 한국어 응답을 받는다.
- * 최종 폴백으로 제거 처리.
+ * AI 응답 JSON에서 사용자 대면 텍스트의 외국어를 감지하고 제거한다.
+ * 감지 시 callAI에서 재시도 → 최종 폴백으로 제거 처리.
  */
 
-// 외국어 문자 패턴
-const CYRILLIC = /[\u0400-\u04FF]+/g;           // 러시아어 등 키릴 문자
-const CJK_UNIFIED = /[\u4E00-\u9FFF]+/g;        // 한자 (중국어)
-const HIRAGANA = /[\u3040-\u309F]+/g;            // 일본어 히라가나
-const KATAKANA = /[\u30A0-\u30FF]+/g;            // 일본어 가타카나
-const LATIN_EXTENDED = /[\u00C0-\u024F]+/g;      // 악센트 있는 라틴 (스페인어, 프랑스어)
-// 영어 단어 3글자 이상 (JSON 키워드/mood 값 제외)
-const ENGLISH_WORDS = /\b[a-zA-Z]{3,}\b/g;
+// ─── 감지용 (no `g` flag — .test()의 lastIndex 버그 방지) ───
+const CYRILLIC_D = /[\u0400-\u04FF]/;
+const CJK_D = /[\u4E00-\u9FFF]/;
+const HIRAGANA_D = /[\u3040-\u309F]/;
+const KATAKANA_D = /[\u30A0-\u30FF]/;
+const LATIN_EXT_D = /[\u00C0-\u024F]/;
+// ENGLISH_WORD_D는 hasForeignText에서 ENGLISH_WORDS_R로 매칭 후 필터링하므로 별도 감지 불필요
+
+// ─── 제거용 (with `g` flag — .replace()에서 전체 매칭) ───
+const CYRILLIC_R = /[\u0400-\u04FF]+/g;
+const CJK_R = /[\u4E00-\u9FFF]+/g;
+const HIRAGANA_R = /[\u3040-\u309F]+/g;
+const KATAKANA_R = /[\u30A0-\u30FF]+/g;
+const LATIN_EXT_R = /[\u00C0-\u024F]+/g;
+const ENGLISH_WORDS_R = /\b[a-zA-Z]{3,}\b/g;
+// 추가 유니코드 범위
+const ARABIC_R = /[\u0600-\u06FF]+/g;
+const THAI_R = /[\u0E00-\u0E7F]+/g;
+const DEVANAGARI_R = /[\u0900-\u097F]+/g;
+const FULLWIDTH_LATIN_R = /[\uFF01-\uFF5E]+/g;
 
 // 허용하는 영어 단어 (JSON 구조에 필요한 값들)
 const ALLOWED_ENGLISH = new Set([
@@ -28,75 +39,107 @@ const ALLOWED_ENGLISH = new Set([
     "bold", "cautious", "diplomatic", "aggressive", "compassionate", "cunning",
 ]);
 
+/** 텍스트 배열 추출 (JSON 파싱 → 사용자 대면 필드만) */
+function extractUserFacingTexts(jsonStr: string): string[] {
+    try {
+        const obj = JSON.parse(jsonStr);
+        const texts: string[] = [];
+
+        if (typeof obj.narration === "string") texts.push(obj.narration);
+        if (Array.isArray(obj.choices)) {
+            for (const c of obj.choices) {
+                if (typeof c.text === "string") texts.push(c.text);
+            }
+        }
+        if (obj.event && typeof obj.event.description === "string") {
+            texts.push(obj.event.description);
+        }
+        if (typeof obj.name === "string") texts.push(obj.name);
+        if (typeof obj.description === "string") texts.push(obj.description);
+        if (Array.isArray(obj.npcs)) {
+            for (const npc of obj.npcs) {
+                if (typeof npc.name === "string") texts.push(npc.name);
+                if (typeof npc.description === "string") texts.push(npc.description);
+            }
+        }
+        if (Array.isArray(obj.rules)) {
+            for (const r of obj.rules) {
+                if (typeof r === "string") texts.push(r);
+            }
+        }
+        // time passage events
+        if (Array.isArray(obj.events)) {
+            for (const e of obj.events) {
+                if (typeof e.description === "string") texts.push(e.description);
+                if (typeof e.summary === "string") texts.push(e.summary);
+            }
+        }
+        if (typeof obj.summary === "string") texts.push(obj.summary);
+
+        return texts;
+    } catch {
+        return [];
+    }
+}
+
 /**
  * 텍스트에 외국어가 포함되어 있는지 감지한다.
  * image_prompt 필드는 제외하고 사용자 대면 텍스트만 검사.
  */
 export function hasForeignText(jsonStr: string): boolean {
-    try {
-        const obj = JSON.parse(jsonStr);
-        const textsToCheck: string[] = [];
+    const texts = extractUserFacingTexts(jsonStr);
+    if (texts.length === 0) return false;
+    const combined = texts.join(" ");
 
-        if (typeof obj.narration === "string") textsToCheck.push(obj.narration);
-        if (Array.isArray(obj.choices)) {
-            for (const c of obj.choices) {
-                if (typeof c.text === "string") textsToCheck.push(c.text);
-            }
-        }
-        if (obj.event && typeof obj.event.description === "string") {
-            textsToCheck.push(obj.event.description);
-        }
-        if (typeof obj.name === "string") textsToCheck.push(obj.name);
-        if (typeof obj.description === "string") textsToCheck.push(obj.description);
-        if (Array.isArray(obj.npcs)) {
-            for (const npc of obj.npcs) {
-                if (typeof npc.name === "string") textsToCheck.push(npc.name);
-                if (typeof npc.description === "string") textsToCheck.push(npc.description);
-            }
-        }
-
-        const combined = textsToCheck.join(" ");
-        return (
-            CYRILLIC.test(combined) ||
-            CJK_UNIFIED.test(combined) ||
-            HIRAGANA.test(combined) ||
-            KATAKANA.test(combined) ||
-            LATIN_EXTENDED.test(combined)
-        );
-    } catch {
-        return false;
+    // 비라틴 외국어 감지
+    if (
+        CYRILLIC_D.test(combined) ||
+        CJK_D.test(combined) ||
+        HIRAGANA_D.test(combined) ||
+        KATAKANA_D.test(combined) ||
+        LATIN_EXT_D.test(combined)
+    ) {
+        return true;
     }
+
+    // 영어 단어 감지 (허용 목록 제외)
+    const englishMatches = combined.match(ENGLISH_WORDS_R);
+    if (englishMatches) {
+        const unexpected = englishMatches.filter(
+            (m) => !ALLOWED_ENGLISH.has(m.toLowerCase())
+        );
+        if (unexpected.length > 0) {
+            console.warn("[sanitize] 비허용 영어 단어 감지:", unexpected.slice(0, 5).join(", "));
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
  * 텍스트에서 외국어 문자를 제거한다 (최종 폴백용).
- * 연속된 외국어 + 주변 공백을 깔끔하게 정리.
  */
 function cleanForeignChars(text: string): string {
     let cleaned = text;
 
-    // 키릴 문자 제거
-    cleaned = cleaned.replace(CYRILLIC, "");
-
-    // 한자 제거 (한국어 문맥에서 한자가 섞인 경우)
-    cleaned = cleaned.replace(CJK_UNIFIED, "");
-
-    // 히라가나/가타카나 제거
-    cleaned = cleaned.replace(HIRAGANA, "");
-    cleaned = cleaned.replace(KATAKANA, "");
-
-    // 악센트 라틴 문자 제거
-    cleaned = cleaned.replace(LATIN_EXTENDED, "");
+    cleaned = cleaned.replace(CYRILLIC_R, "");
+    cleaned = cleaned.replace(CJK_R, "");
+    cleaned = cleaned.replace(HIRAGANA_R, "");
+    cleaned = cleaned.replace(KATAKANA_R, "");
+    cleaned = cleaned.replace(LATIN_EXT_R, "");
+    cleaned = cleaned.replace(ARABIC_R, "");
+    cleaned = cleaned.replace(THAI_R, "");
+    cleaned = cleaned.replace(DEVANAGARI_R, "");
+    cleaned = cleaned.replace(FULLWIDTH_LATIN_R, "");
 
     // 허용 목록에 없는 영어 단어 제거
-    cleaned = cleaned.replace(ENGLISH_WORDS, (match) => {
+    cleaned = cleaned.replace(ENGLISH_WORDS_R, (match) => {
         return ALLOWED_ENGLISH.has(match.toLowerCase()) ? match : "";
     });
 
     // 다중 공백 정리
     cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
-
-    // 빈 따옴표 안 정리 ("  " → "")
     cleaned = cleaned.replace(/"\s*"/g, '""');
 
     return cleaned;
@@ -165,14 +208,14 @@ export function sanitizeKoreanResponse(jsonStr: string): string {
             );
         }
 
-        // image_prompt: 한국어/한자가 포함되어 있으면 표시 (번역은 호출부에서 처리)
+        // image_prompt: 한자/키릴 등 비영어 제거 (영문 유지)
         if (typeof obj.image_prompt === "string") {
-            // 한자, 히라가나, 가타카나, 키릴 제거
             obj.image_prompt = obj.image_prompt
                 .replace(/[\u4E00-\u9FFF]+/g, "")
                 .replace(/[\u3040-\u309F]+/g, "")
                 .replace(/[\u30A0-\u30FF]+/g, "")
                 .replace(/[\u0400-\u04FF]+/g, "")
+                .replace(/[\uAC00-\uD7AF]+/g, "")  // 한글도 제거 (image_prompt는 영문 전용)
                 .replace(/\s{2,}/g, " ")
                 .trim();
         }
@@ -227,10 +270,23 @@ export function sanitizeKoreanResponse(jsonStr: string): string {
                 obj.protagonist.description = cleanForeignChars(obj.protagonist.description);
             }
         }
+        // 시간 경과 이벤트
+        if (Array.isArray(obj.events)) {
+            for (const event of obj.events) {
+                if (typeof event.description === "string") {
+                    event.description = cleanForeignChars(event.description);
+                }
+                if (typeof event.time_description === "string") {
+                    event.time_description = cleanForeignChars(event.time_description);
+                }
+            }
+        }
+        if (typeof obj.summary === "string") {
+            obj.summary = cleanForeignChars(obj.summary);
+        }
 
         return JSON.stringify(obj);
     } catch {
-        // JSON 파싱 실패 시 원본 반환
         return jsonStr;
     }
 }

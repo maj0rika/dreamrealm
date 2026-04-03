@@ -119,6 +119,15 @@ export async function POST(request: Request) {
                 discovered: loc.name === generatedSpec.starting_location.name,
             });
             locationMap.set(loc.name, created.id);
+
+            // 시각 앵커 + 이미지 시드 저장 (이미지 일관성)
+            if (loc.visual_anchor) {
+                const imageSeed = Math.floor(Math.random() * 2147483647);
+                await supabase
+                    .from("locations")
+                    .update({ visual_anchor: loc.visual_anchor, image_seed: imageSeed })
+                    .eq("id", created.id);
+            }
         }
 
         // 2차: connected_to UUID 배열 업데이트

@@ -45,7 +45,7 @@ export async function createLocation(params: {
 
 export async function updateLocation(
     locationId: string,
-    updates: Partial<Pick<Location, "name" | "description" | "connected_to" | "discovered" | "image_url">>
+    updates: Partial<Pick<Location, "name" | "description" | "connected_to" | "discovered" | "image_url" | "visual_anchor" | "image_seed">>
 ): Promise<Location> {
     const supabase = await createServerClient();
     const { data, error } = await supabase
