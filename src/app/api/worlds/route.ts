@@ -6,8 +6,6 @@ import {
     createWorldRequestSchema,
     generatedWorldSpecSchema,
     turnResponseSchema,
-    type GeneratedWorldSpec,
-    type GeneratedTurnResponse,
 } from "@/lib/ai/schemas";
 import { createWorld } from "@/lib/db/worlds";
 import { createLocation } from "@/lib/db/locations";
@@ -53,9 +51,16 @@ export async function POST(request: Request) {
             maxTokens: 4000,
         });
 
-        const worldSpecParsed = generatedWorldSpecSchema.safeParse(
-            JSON.parse(worldRaw)
-        );
+        let worldJson: unknown;
+        try {
+            worldJson = JSON.parse(worldRaw);
+        } catch {
+            return Response.json(
+                { error: "월드 생성 실패: AI 응답 JSON 파싱 실패" },
+                { status: 502 }
+            );
+        }
+        const worldSpecParsed = generatedWorldSpecSchema.safeParse(worldJson);
         if (!worldSpecParsed.success) {
             return Response.json(
                 { error: "월드 생성 실패: AI 응답 형식 오류" },
@@ -131,7 +136,7 @@ export async function POST(request: Request) {
         const protagonist = await createEntity({
             world_id: world.id,
             name: generatedSpec.protagonist.name,
-            entity_type: "protagonist" as string,
+            entity_type: "protagonist",
             description: generatedSpec.protagonist.description,
             personality: "주인공",
             location_id: startingLocationId,
@@ -184,7 +189,16 @@ export async function POST(request: Request) {
             temperature: 0.8,
         });
 
-        const sceneParsed = turnResponseSchema.safeParse(JSON.parse(sceneRaw));
+        let sceneJson: unknown;
+        try {
+            sceneJson = JSON.parse(sceneRaw);
+        } catch {
+            return Response.json(
+                { error: "시작 장면 생성 실패: AI 응답 JSON 파싱 실패" },
+                { status: 502 }
+            );
+        }
+        const sceneParsed = turnResponseSchema.safeParse(sceneJson);
         if (!sceneParsed.success) {
             return Response.json(
                 { error: "시작 장면 생성 실패: AI 응답 형식 오류" },

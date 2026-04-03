@@ -69,7 +69,16 @@ export async function POST(
         const aiRaw = await callAI(messages, userPlan, { temperature: 0.8 });
 
         // AI 응답 파싱 및 검증
-        const aiParsed = turnResponseSchema.safeParse(JSON.parse(aiRaw));
+        let aiJson: unknown;
+        try {
+            aiJson = JSON.parse(aiRaw);
+        } catch {
+            return Response.json(
+                { error: "AI 응답 JSON 파싱 실패" },
+                { status: 502 }
+            );
+        }
+        const aiParsed = turnResponseSchema.safeParse(aiJson);
         if (!aiParsed.success) {
             return Response.json(
                 { error: "AI 응답 형식 오류" },
@@ -118,7 +127,7 @@ export async function POST(
         };
 
         // 턴 저장
-        await createTurn({
+        const turn = await createTurn({
             world_id: worldId,
             turn_number: newTurnNumber,
             user_input: input,
@@ -135,7 +144,7 @@ export async function POST(
             });
         }
 
-        return Response.json(aiResponse);
+        return Response.json({ turn, response: dbTurnResponse });
     } catch (error) {
         console.error("턴 처리 오류:", error);
         return Response.json(

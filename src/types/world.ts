@@ -73,7 +73,7 @@ export interface TurnResponse {
 }
 
 /** 엔티티 타입 */
-export type EntityType = "npc" | "creature" | "object" | "faction";
+export type EntityType = "protagonist" | "npc" | "creature" | "object" | "faction";
 
 /** NPC 성격 축 */
 export interface PersonalityAxes {

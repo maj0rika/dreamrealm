@@ -30,7 +30,7 @@ export async function buildContext(
 
     // 주인공 찾기
     const protagonist = entities.find(
-        (e) => (e.entity_type as string) === "protagonist"
+        (e) => e.entity_type === "protagonist"
     );
     if (!protagonist) throw new Error("주인공을 찾을 수 없습니다");
 

@@ -36,7 +36,7 @@ interface TurnApiResponse {
 export default function WorldExplorePage() {
     const { id } = useParams<{ id: string }>();
 
-    const [world, setWorld] = useState<World | null>(null);
+    const [, setWorld] = useState<World | null>(null);
     const [narration, setNarration] = useState("");
     const [choices, setChoices] = useState<Choice[]>([]);
     const [mood, setMood] = useState<Mood>("neutral");
@@ -45,12 +45,17 @@ export default function WorldExplorePage() {
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
     const [typingDone, setTypingDone] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // 세션 복원
     useEffect(() => {
         async function resume() {
             const res = await fetch(`/api/worlds/${id}/resume`);
-            if (!res.ok) return;
+            if (!res.ok) {
+                setError("세계 데이터를 불러오지 못했습니다.");
+                setLoading(false);
+                return;
+            }
 
             const data: ResumeData = await res.json();
             setWorld(data.world);
@@ -90,6 +95,7 @@ export default function WorldExplorePage() {
     async function sendTurn(input: string) {
         setProcessing(true);
         setTypingDone(false);
+        setError(null);
 
         const res = await fetch(`/api/worlds/${id}/turn`, {
             method: "POST",
@@ -100,6 +106,8 @@ export default function WorldExplorePage() {
         if (res.ok) {
             const data: TurnApiResponse = await res.json();
             applyTurnResponse(data.response, data.turn);
+        } else {
+            setError("응답을 생성하지 못했습니다. 다시 시도해 주세요.");
         }
 
         setProcessing(false);
@@ -124,6 +132,14 @@ export default function WorldExplorePage() {
                     <div className="size-8 animate-spin rounded-full border-2 border-[#7c6aff] border-t-transparent" />
                     <p className="text-sm text-zinc-500">세계에 접속 중...</p>
                 </div>
+            </div>
+        );
+    }
+
+    if (error && !narration) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-[#08080d]">
+                <p className="text-sm text-red-400">{error}</p>
             </div>
         );
     }
@@ -166,6 +182,11 @@ export default function WorldExplorePage() {
 
             {/* 하단: 선택지 + 자유 입력 */}
             <div className="sticky bottom-0 mx-auto w-full max-w-2xl pb-6">
+                {/* 에러 표시 */}
+                {error && narration && (
+                    <p className="mb-3 text-center text-sm text-red-400">{error}</p>
+                )}
+
                 {/* 처리 중 표시 */}
                 {processing && (
                     <div className="mb-3 flex items-center justify-center gap-2 text-sm text-zinc-500">

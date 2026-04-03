@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/db/supabase-browser";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,18 +67,15 @@ interface WorldCardProps {
 
 export function WorldCard({ world }: WorldCardProps) {
     const router = useRouter();
-    const supabaseRef = useRef<ReturnType<typeof createBrowserClient> | null>(null);
-    if (typeof window !== "undefined" && !supabaseRef.current) {
-        supabaseRef.current = createBrowserClient();
-    }
-    const supabase = supabaseRef.current!;
+    const supabase = useMemo(() => createBrowserClient(), []);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
     async function handleDelete() {
         setDeleting(true);
-        await supabase.from("worlds").delete().eq("id", world.id);
+        const { error } = await supabase.from("worlds").delete().eq("id", world.id);
         setDeleting(false);
+        if (error) return;
         setShowDeleteDialog(false);
         router.refresh();
     }

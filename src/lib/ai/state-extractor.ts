@@ -24,7 +24,7 @@ export async function extractAndApplyState(
     ]);
 
     const protagonist = entities.find(
-        (e) => (e.entity_type as string) === "protagonist"
+        (e) => e.entity_type === "protagonist"
     );
     if (!protagonist) throw new Error("주인공을 찾을 수 없습니다");
 

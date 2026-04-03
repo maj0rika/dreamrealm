@@ -47,7 +47,7 @@ export async function GET(
 
         // 주인공의 현재 위치
         const protagonist = entities.find(
-            (e) => (e.entity_type as string) === "protagonist"
+            (e) => e.entity_type === "protagonist"
         );
         const currentLocation = protagonist?.location_id
             ? locations.find((l) => l.id === protagonist.location_id) ?? null
