@@ -139,12 +139,13 @@ export async function POST(
         // turn_count 증가
         await updateWorld(worldId, { turn_count: newTurnNumber });
 
-        // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget)
+        // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget) — 아트 스타일 자동 append
         if (aiResponse.generate_image && aiResponse.image_prompt) {
+            const imagePromptWithStyle = aiResponse.image_prompt + ", " + (world.art_style ?? "");
             generateAndSaveTurnImage(
                 worldId,
                 newTurnNumber,
-                aiResponse.image_prompt
+                imagePromptWithStyle
             ).catch((err) => console.error("[turn-image] 생성 실패:", err));
         }
 

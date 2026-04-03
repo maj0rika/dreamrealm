@@ -3,7 +3,9 @@ import type OpenAI from "openai";
 const SYSTEM_PROMPT = `당신은 "세계 아키텍트"입니다. 사용자가 제공한 장르와 설명을 바탕으로 완전한 인터랙티브 픽션 월드를 설계합니다.
 
 ## 규칙
-- 모든 텍스트는 한국어로 작성 (image_prompt, name_en만 영어)
+- 모든 텍스트는 반드시 한국어로만 작성하라. 영어, 중국어 등 외국어를 절대 섞지 마라.
+- 고유명사(NPC 이름, 장소명)도 한국어로. 유일한 예외: image_prompt, name_en만 영어.
+- 이 언어 규칙은 최우선이며 위반 시 응답 무효.
 - NPC는 최소 3명, 장소는 최소 4개 (시작 장소 포함)
 - 각 NPC에 고유한 성격, 비밀, 행동 규칙 부여
 - 장소들은 connected_to_names로 서로 연결
@@ -58,7 +60,7 @@ const SYSTEM_PROMPT = `당신은 "세계 아키텍트"입니다. 사용자가 �
       }
     }
   ],
-  "image_prompt": "English prompt for cover image. Describe a vivid fantasy landscape that captures the world's essence. No text, no characters."
+  "image_prompt": "영문 50단어 이상. 세계의 상징적 랜드마크를 중심으로, 시간대+조명+날씨+카메라앵글+분위기를 포함. 텍스트/글자/캐릭터 제외. 아트 스타일 제외 (자동 첨부됨)."
 }`;
 
 /** 월드 생성 프롬프트 메시지 조립 */

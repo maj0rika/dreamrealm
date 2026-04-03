@@ -14,6 +14,7 @@ import { createRelationship } from "@/lib/db/relationships";
 import { createTurn } from "@/lib/db/turns";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/upload";
+import { getDefaultArtStyle, getArtStyleById } from "@/lib/ai/art-styles";
 import type { WorldSpec, TurnResponse, Mood } from "@/types/world";
 
 export async function POST(request: Request) {
@@ -44,7 +45,13 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-        const { genre, prompt } = parsed.data;
+        const { genre, prompt, art_style: artStyleId } = parsed.data;
+
+        // 아트 스타일 결정: 명시적 선택 → 장르 기본값
+        const artStyleOption = artStyleId
+            ? getArtStyleById(artStyleId) ?? getDefaultArtStyle(genre)
+            : getDefaultArtStyle(genre);
+        const artStyle = artStyleOption.prompt;
 
         // 1단계: 월드 생성 AI 호출
         const worldMessages = buildWorldGeneratorMessages(genre, prompt);
@@ -93,6 +100,7 @@ export async function POST(request: Request) {
             name: generatedSpec.name,
             genre: generatedSpec.genre as WorldSpec["genre"],
             world_spec: dbWorldSpec,
+            art_style: artStyle,
         });
 
         // 장소 저장 — 시작 장소 + 추가 장소
@@ -257,10 +265,18 @@ export async function POST(request: Request) {
             .update({ turn_count: 1 })
             .eq("id", world.id);
 
-        // 커버 이미지 비동기 생성 (fire-and-forget)
-        generateAndSaveCoverImage(world.id, generatedSpec.image_prompt).catch(
-            (err) => console.error("[cover-image] 생성 실패:", err)
-        );
+        // 커버 이미지 비동기 생성 (fire-and-forget) — 아트 스타일 자동 append
+        const coverPrompt = generatedSpec.image_prompt
+            ? generatedSpec.image_prompt + ", " + artStyle
+            : null;
+        console.log("[cover-image] 생성 시작:", world.id, "prompt:", coverPrompt?.slice(0, 80));
+        if (coverPrompt) {
+            generateAndSaveCoverImage(world.id, coverPrompt).catch(
+                (err) => console.error("[cover-image] 생성 실패:", err)
+            );
+        } else {
+            console.warn("[cover-image] image_prompt가 없어서 스킵");
+        }
 
         return Response.json({
             worldId: world.id,
