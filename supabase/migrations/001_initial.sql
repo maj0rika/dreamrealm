@@ -60,7 +60,7 @@ CREATE TABLE entities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     world_id UUID NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    entity_type TEXT NOT NULL DEFAULT 'npc' CHECK (entity_type IN ('npc', 'creature', 'object', 'faction')),
+    entity_type TEXT NOT NULL DEFAULT 'npc' CHECK (entity_type IN ('protagonist', 'npc', 'creature', 'object', 'faction')),
     description TEXT NOT NULL DEFAULT '',
     personality TEXT NOT NULL DEFAULT '',
     location_id UUID REFERENCES locations(id) ON DELETE SET NULL,

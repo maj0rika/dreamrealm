@@ -123,12 +123,16 @@ export async function extractAndApplyState(
         }
     }
 
-    // 이벤트 저장
+    // 이벤트 저장 — participants(이름) → entities_involved(UUID) 변환
+    const participantIds = aiResponse.event.participants
+        .map((name) => entities.find((e) => e.name === name)?.id)
+        .filter((id): id is string => id !== undefined);
+
     const event = await createEvent({
         world_id: worldId,
         description: aiResponse.event.description,
         importance: aiResponse.event.importance,
-        entities_involved: aiResponse.event.participants,
+        entities_involved: participantIds,
     });
 
     // 중요 이벤트 → 임베딩 생성

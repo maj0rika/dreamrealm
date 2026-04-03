@@ -71,33 +71,45 @@ const choiceSchema = z.object({
     text: z.string(),
 });
 
-/** 관계 변경 스키마 */
+/** 관계 변경 스키마 — AI가 다양한 키 이름으로 보낼 수 있으므로 유연하게 처리 */
 const relationshipChangeSchema = z.object({
-    entity_name: z.string(),
-    relationship_type: z.string(),
-    strength_delta: z.number(),
-    reason: z.string(),
-});
+    entity_name: z.string().optional().default(""),
+    name: z.string().optional(),
+    relationship_type: z.string().optional().default("stranger"),
+    type: z.string().optional(),
+    strength_delta: z.number().optional().default(0),
+    delta: z.number().optional(),
+    change: z.number().optional(),
+    reason: z.string().optional().default(""),
+}).transform((rc) => ({
+    entity_name: rc.entity_name || rc.name || "",
+    relationship_type: rc.relationship_type || rc.type || "stranger",
+    strength_delta: rc.strength_delta || rc.delta || rc.change || 0,
+    reason: rc.reason || "",
+}));
 
 /** 이벤트 스키마 */
 const eventSchema = z.object({
-    description: z.string(),
-    importance: z.number().min(1).max(10),
-    participants: z.array(z.string()),
+    description: z.string().default(""),
+    importance: z.number().min(1).max(10).default(1),
+    participants: z.array(z.string()).default([]),
 });
 
-/** AI turn 응답 스키마 */
+/** AI turn 응답 스키마 — LLM 출력 변동에 대응하여 기본값 적용 */
 export const turnResponseSchema = z.object({
     narration: z.string(),
-    choices: z.array(choiceSchema).min(2).max(4),
-    mood: z.string(),
-    location_changed: z.string().nullable(),
-    items_gained: z.array(z.string()),
-    items_lost: z.array(z.string()),
-    relationship_changes: z.array(relationshipChangeSchema),
-    event: eventSchema,
-    generate_image: z.boolean(),
-    image_prompt: z.string().optional(),
+    choices: z.array(choiceSchema).min(1).max(5),
+    mood: z.string().default("neutral"),
+    location_changed: z.union([z.string(), z.boolean(), z.null()]).transform((v) => {
+        if (typeof v === "string" && v.length > 0) return v;
+        return null;
+    }).default(null),
+    items_gained: z.array(z.string()).default([]),
+    items_lost: z.array(z.string()).default([]),
+    relationship_changes: z.array(relationshipChangeSchema).default([]),
+    event: eventSchema.default({ description: "", importance: 1, participants: [] }),
+    generate_image: z.boolean().default(false),
+    image_prompt: z.string().optional().default(""),
 });
 
 export type GeneratedTurnResponse = z.infer<typeof turnResponseSchema>;

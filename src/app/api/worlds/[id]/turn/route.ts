@@ -82,8 +82,10 @@ export async function POST(
         }
         const aiParsed = turnResponseSchema.safeParse(aiJson);
         if (!aiParsed.success) {
+            console.error("[turn] 스키마 검증 실패:", JSON.stringify(aiParsed.error.flatten()));
+            console.error("[turn] AI 원본 응답:", JSON.stringify(aiJson).slice(0, 500));
             return Response.json(
-                { error: "AI 응답 형식 오류" },
+                { error: "AI 응답 형식 오류", details: aiParsed.error.flatten() },
                 { status: 502 }
             );
         }
@@ -140,6 +142,7 @@ export async function POST(
         await updateWorld(worldId, { turn_count: newTurnNumber });
 
         // 이미지 생성 요청이 있으면 비동기 생성 (fire-and-forget) — 아트 스타일 자동 append
+        console.log("[turn] generate_image:", aiResponse.generate_image, "location_changed:", aiResponse.location_changed, "image_prompt:", aiResponse.image_prompt?.slice(0, 50));
         if (aiResponse.generate_image && aiResponse.image_prompt) {
             const imagePromptWithStyle = aiResponse.image_prompt + ", " + world.art_style;
             generateAndSaveTurnImage(
@@ -228,18 +231,30 @@ async function generateAndSaveTurnImage(
     turnNumber: number,
     prompt: string
 ): Promise<void> {
+    console.log("[turn-image] 생성 시작 — turn:", turnNumber);
     const imageUrl = await generateImage(prompt);
-    if (!imageUrl) return;
+    if (!imageUrl) {
+        console.error("[turn-image] 이미지 생성 실패 — null");
+        return;
+    }
+    console.log("[turn-image] 업로드 시작...");
 
     const publicUrl = await uploadImageFromUrl(
         imageUrl,
         `${worldId}/turns/${turnNumber}.webp`
     );
+    console.log("[turn-image] 업로드 완료:", publicUrl.slice(0, 80));
 
     const supabase = await createServerClient();
-    await supabase
+    const { error } = await supabase
         .from("turns")
         .update({ image_url: publicUrl })
         .eq("world_id", worldId)
         .eq("turn_number", turnNumber);
+
+    if (error) {
+        console.error("[turn-image] DB 업데이트 실패:", error.message);
+    } else {
+        console.log("[turn-image] DB 업데이트 완료 — turn:", turnNumber);
+    }
 }
