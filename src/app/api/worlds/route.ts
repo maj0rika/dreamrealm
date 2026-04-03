@@ -1,0 +1,260 @@
+import { createServerClient } from "@/lib/db/supabase";
+import { callAI } from "@/lib/ai/client";
+import { buildWorldGeneratorMessages } from "@/lib/ai/prompts/world-generator";
+import { buildOpeningSceneMessages } from "@/lib/ai/prompts/opening-scene";
+import {
+    createWorldRequestSchema,
+    generatedWorldSpecSchema,
+    turnResponseSchema,
+    type GeneratedWorldSpec,
+    type GeneratedTurnResponse,
+} from "@/lib/ai/schemas";
+import { createWorld } from "@/lib/db/worlds";
+import { createLocation } from "@/lib/db/locations";
+import { createEntity } from "@/lib/db/entities";
+import { createRelationship } from "@/lib/db/relationships";
+import { createTurn } from "@/lib/db/turns";
+import type { WorldSpec, TurnResponse, Mood } from "@/types/world";
+
+export async function POST(request: Request) {
+    try {
+        // 인증 확인
+        const supabase = await createServerClient();
+        const {
+            data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+            return Response.json({ error: "인증이 필요합니다" }, { status: 401 });
+        }
+
+        // 사용자 프로필 조회 (플랜 확인)
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("plan")
+            .eq("id", user.id)
+            .single();
+        const userPlan = profile?.plan ?? "free";
+
+        // 입력 검증
+        const body = await request.json();
+        const parsed = createWorldRequestSchema.safeParse(body);
+        if (!parsed.success) {
+            return Response.json(
+                { error: "잘못된 입력입니다", details: parsed.error.flatten() },
+                { status: 400 }
+            );
+        }
+        const { genre, prompt } = parsed.data;
+
+        // 1단계: 월드 생성 AI 호출
+        const worldMessages = buildWorldGeneratorMessages(genre, prompt);
+        const worldRaw = await callAI(worldMessages, userPlan, {
+            temperature: 0.9,
+            maxTokens: 4000,
+        });
+
+        const worldSpecParsed = generatedWorldSpecSchema.safeParse(
+            JSON.parse(worldRaw)
+        );
+        if (!worldSpecParsed.success) {
+            return Response.json(
+                { error: "월드 생성 실패: AI 응답 형식 오류" },
+                { status: 502 }
+            );
+        }
+        const generatedSpec = worldSpecParsed.data;
+
+        // DB에 월드 저장
+        const dbWorldSpec: WorldSpec = {
+            genre: generatedSpec.genre as WorldSpec["genre"],
+            theme: generatedSpec.tone,
+            setting: generatedSpec.description,
+            rules: generatedSpec.rules,
+            atmosphere: generatedSpec.tone,
+            initial_locations: [
+                generatedSpec.starting_location.name,
+                ...generatedSpec.additional_locations.map((l) => l.name),
+            ],
+            initial_entities: [
+                generatedSpec.protagonist.name,
+                ...generatedSpec.npcs.map((n) => n.name),
+            ],
+        };
+
+        const world = await createWorld({
+            user_id: user.id,
+            name: generatedSpec.name,
+            genre: generatedSpec.genre as WorldSpec["genre"],
+            world_spec: dbWorldSpec,
+        });
+
+        // 장소 저장 — 시작 장소 + 추가 장소
+        const allLocations = [
+            generatedSpec.starting_location,
+            ...generatedSpec.additional_locations,
+        ];
+
+        // 1차: 모든 장소 생성 (connected_to는 이후 업데이트)
+        const locationMap = new Map<string, string>(); // name → id
+        for (const loc of allLocations) {
+            const created = await createLocation({
+                world_id: world.id,
+                name: loc.name,
+                description: loc.description,
+                discovered: loc.name === generatedSpec.starting_location.name,
+            });
+            locationMap.set(loc.name, created.id);
+        }
+
+        // 2차: connected_to UUID 배열 업데이트
+        for (const loc of allLocations) {
+            const locationId = locationMap.get(loc.name);
+            if (!locationId) continue;
+
+            const connectedIds = loc.connected_to_names
+                .map((name) => locationMap.get(name))
+                .filter((id): id is string => id !== undefined);
+
+            if (connectedIds.length > 0) {
+                await supabase
+                    .from("locations")
+                    .update({ connected_to: connectedIds })
+                    .eq("id", locationId);
+            }
+        }
+
+        const startingLocationId = locationMap.get(
+            generatedSpec.starting_location.name
+        )!;
+
+        // 주인공 저장
+        const protagonist = await createEntity({
+            world_id: world.id,
+            name: generatedSpec.protagonist.name,
+            entity_type: "protagonist" as string,
+            description: generatedSpec.protagonist.description,
+            personality: "주인공",
+            location_id: startingLocationId,
+            inventory: generatedSpec.protagonist.inventory.map((item) => ({
+                name: item,
+            })),
+            behavior_rules: {
+                core_drive: "모험",
+                personality_axes: {
+                    boldness: 0.5,
+                    loyalty: 0.5,
+                    curiosity: 0.7,
+                    honesty: 0.5,
+                },
+                goals: ["세계를 탐험한다"],
+                behavioral_triggers: [],
+                speech_style: "",
+                knowledge: [],
+                secrets: [],
+            },
+        });
+
+        // NPC 저장 + 주인공과의 초기 관계 생성
+        for (const npc of generatedSpec.npcs) {
+            const npcLocationId = locationMap.get(npc.location_name);
+
+            const entity = await createEntity({
+                world_id: world.id,
+                name: npc.name,
+                entity_type: npc.entity_type,
+                description: npc.description,
+                personality: npc.personality,
+                location_id: npcLocationId,
+                behavior_rules: npc.behavior_rules,
+            });
+
+            // 주인공 ↔ NPC 초기 관계
+            await createRelationship({
+                world_id: world.id,
+                entity_id: protagonist.id,
+                target_entity_id: entity.id,
+                relationship_type: "stranger",
+                strength: 0,
+            });
+        }
+
+        // 2단계: 시작 장면 생성
+        const sceneMessages = buildOpeningSceneMessages(generatedSpec);
+        const sceneRaw = await callAI(sceneMessages, userPlan, {
+            temperature: 0.8,
+        });
+
+        const sceneParsed = turnResponseSchema.safeParse(JSON.parse(sceneRaw));
+        if (!sceneParsed.success) {
+            return Response.json(
+                { error: "시작 장면 생성 실패: AI 응답 형식 오류" },
+                { status: 502 }
+            );
+        }
+        const generatedScene = sceneParsed.data;
+
+        // TurnResponse DB 형식으로 변환
+        const dbTurnResponse: TurnResponse = {
+            narration: generatedScene.narration,
+            choices: generatedScene.choices.map((c) => ({
+                id: String(c.id),
+                text: c.text,
+                tone: "cautious" as const,
+                risk_level: 1,
+            })),
+            mood: generatedScene.mood as Mood,
+            items_gained: generatedScene.items_gained,
+            items_lost: generatedScene.items_lost,
+            location_changes: [],
+            relationship_changes: generatedScene.relationship_changes.map(
+                (rc) => ({
+                    entity_id: "",
+                    entity_name: rc.entity_name,
+                    relationship_type: rc.relationship_type,
+                    strength_delta: rc.strength_delta,
+                    reason: rc.reason,
+                })
+            ),
+            events: [
+                {
+                    description: generatedScene.event.description,
+                    importance: generatedScene.event.importance,
+                    entities_involved: generatedScene.event.participants,
+                    location_id: startingLocationId,
+                },
+            ],
+            generate_image: generatedScene.generate_image,
+            image_prompt: generatedScene.image_prompt,
+        };
+
+        // 첫 턴 저장
+        await createTurn({
+            world_id: world.id,
+            turn_number: 1,
+            user_input: "[세계 시작]",
+            ai_response: dbTurnResponse,
+        });
+
+        // turn_count 업데이트
+        await supabase
+            .from("worlds")
+            .update({ turn_count: 1 })
+            .eq("id", world.id);
+
+        return Response.json({
+            worldId: world.id,
+            firstTurn: generatedScene,
+        });
+    } catch (error) {
+        console.error("월드 생성 오류:", error);
+        return Response.json(
+            {
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "월드 생성 중 오류가 발생했습니다",
+            },
+            { status: 500 }
+        );
+    }
+}
