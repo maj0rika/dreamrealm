@@ -29,7 +29,7 @@ export async function generateImage(prompt: string): Promise<string | null> {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                version: "black-forest-labs/flux-schnell",
+                model: "black-forest-labs/flux-schnell",
                 input: {
                     prompt,
                     num_outputs: 1,

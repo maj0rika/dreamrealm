@@ -14,6 +14,10 @@ export async function uploadImageFromUrl(
     if (!response.ok) {
         throw new Error(`이미지 다운로드 실패: ${response.status}`);
     }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.startsWith("image/")) {
+        throw new Error(`이미지가 아닌 콘텐츠: ${contentType}`);
+    }
     const arrayBuffer = await response.arrayBuffer();
 
     // 2. Supabase Storage 업로드
