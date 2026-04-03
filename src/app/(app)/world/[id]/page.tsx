@@ -50,10 +50,12 @@ export default function WorldExplorePage() {
 
     const [world, setWorld] = useState<World | null>(null);
     const [narration, setNarration] = useState("");
+    const [narrationInstant, setNarrationInstant] = useState(false);
     const [choices, setChoices] = useState<Choice[]>([]);
     const [mood, setMood] = useState<Mood>("neutral");
     const [locationName, setLocationName] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [prevImageUrl, setPrevImageUrl] = useState<string | null>(null);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [imagePolling, setImagePolling] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -62,8 +64,12 @@ export default function WorldExplorePage() {
     const [error, setError] = useState<string | null>(null);
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // 세션 복원
+    // 세션 복원 (StrictMode 중복 방지)
+    const resumedRef = useRef(false);
     useEffect(() => {
+        if (resumedRef.current) return;
+        resumedRef.current = true;
+
         async function resume() {
             const res = await fetch(`/api/worlds/${id}/resume`);
             if (!res.ok) {
@@ -81,12 +87,30 @@ export default function WorldExplorePage() {
 
             if (data.lastTurn) {
                 const resp = data.lastTurn.ai_response;
+                setNarrationInstant(true);
                 setNarration(resp.narration);
                 setChoices(resp.choices);
                 setMood(resp.mood);
+                // 이미지 우선순위: 턴 이미지 > 커버 이미지
                 if (data.lastTurn.image_url) {
                     setImageUrl(data.lastTurn.image_url);
+                    setPrevImageUrl(data.lastTurn.image_url);
+                    setImageLoaded(true);
+                } else if (data.world.cover_image_url) {
+                    setImageUrl(data.world.cover_image_url);
+                    setPrevImageUrl(data.world.cover_image_url);
+                    setImageLoaded(true);
                 }
+            } else if (data.world.cover_image_url) {
+                // 턴이 없어도 커버 이미지는 표시
+                setImageUrl(data.world.cover_image_url);
+                setPrevImageUrl(data.world.cover_image_url);
+                setImageLoaded(true);
+            }
+
+            // 커버 이미지가 아직 없으면 폴링 (비동기 생성 대기)
+            if (!data.world.cover_image_url && !data.lastTurn?.image_url) {
+                pollCoverImage(id);
             }
 
             setLoading(false);
@@ -95,6 +119,31 @@ export default function WorldExplorePage() {
         resume();
     }, [id]);
 
+    // 커버 이미지 폴링 (비동기 생성 완료 대기)
+    function pollCoverImage(worldId: string) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        let attempts = 0;
+        pollingRef.current = setInterval(async () => {
+            attempts++;
+            if (attempts > 10) {
+                if (pollingRef.current) clearInterval(pollingRef.current);
+                pollingRef.current = null;
+                return;
+            }
+            try {
+                const res = await fetch(`/api/worlds/${worldId}/image?type=cover`);
+                if (!res.ok) return;
+                const data: { imageUrl: string | null } = await res.json();
+                if (data.imageUrl) {
+                    setImageUrl(data.imageUrl);
+                    setImageLoaded(false);
+                    if (pollingRef.current) clearInterval(pollingRef.current);
+                    pollingRef.current = null;
+                }
+            } catch { /* ignore */ }
+        }, 3000);
+    }
+
     // 이미지 폴링 정리
     useEffect(() => {
         return () => {
@@ -102,57 +151,63 @@ export default function WorldExplorePage() {
         };
     }, []);
 
-    // 턴 이미지 비동기 폴링 (3초 간격, 최대 8회 = 24초)
+    // 턴 이미지 비동기 폴링 (5초 후 시작, 3초 간격, 최대 10회)
     function pollTurnImage(turnNumber: number) {
         if (pollingRef.current) clearInterval(pollingRef.current);
 
         setImagePolling(true);
         let attempts = 0;
-        const maxAttempts = 8;
+        const maxAttempts = 10;
 
-        pollingRef.current = setInterval(async () => {
-            attempts++;
-            if (attempts > maxAttempts) {
-                if (pollingRef.current) clearInterval(pollingRef.current);
-                pollingRef.current = null;
-                setImagePolling(false);
-                return;
-            }
-
-            try {
-                const res = await fetch(
-                    `/api/worlds/${id}/image?type=turn&turn=${turnNumber}`
-                );
-                if (!res.ok) return;
-
-                const data: { imageUrl: string | null } = await res.json();
-                if (data.imageUrl) {
-                    setImageUrl(data.imageUrl);
-                    setImageLoaded(false);
+        setTimeout(() => {
+            pollingRef.current = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
                     if (pollingRef.current) clearInterval(pollingRef.current);
                     pollingRef.current = null;
                     setImagePolling(false);
+                    return;
                 }
-            } catch {
-                // 네트워크 에러 무시
-            }
-        }, 3000);
+
+                try {
+                    const res = await fetch(
+                        `/api/worlds/${id}/image?type=turn&turn=${turnNumber}`
+                    );
+                    if (!res.ok) return;
+
+                    const data: { imageUrl: string | null } = await res.json();
+                    if (data.imageUrl) {
+                        setImageUrl(data.imageUrl);
+                        setImageLoaded(false);
+                        if (pollingRef.current) clearInterval(pollingRef.current);
+                        pollingRef.current = null;
+                        setImagePolling(false);
+                    }
+                } catch {
+                    // 네트워크 에러 무시
+                }
+            }, 3000);
+        }, 5000); // 첫 폴링 5초 딜레이
     }
 
     // 턴 응답 처리
     function applyTurnResponse(response: TurnResponse, turn: Turn) {
+        setNarrationInstant(false);
         setNarration(response.narration);
         setChoices(response.choices);
         setMood(response.mood);
         setTypingDone(false);
-        setImageLoaded(false);
 
+        // 이미지 처리: 이전 이미지를 유지하다가 새 이미지가 도착하면 교체
         if (turn.image_url) {
+            // 새 이미지가 이미 준비됨 — 크로스페이드
+            setImageLoaded(false);
             setImageUrl(turn.image_url);
         } else if (response.generate_image) {
-            // 이미지가 아직 없지만 생성 중 — 폴링 시작
+            // 이미지 생성 중 — 기존 이미지 유지한 채 폴링 시작
             pollTurnImage(turn.turn_number);
         }
+        // generate_image=false면: 이전 이미지 그대로 유지 (아무것도 안 함)
     }
 
     // 턴 전송
@@ -223,14 +278,28 @@ export default function WorldExplorePage() {
                 {/* 분위기 오버레이 */}
                 <div className={`absolute inset-0 bg-gradient-to-b ${moodGradient}`} />
 
-                {/* 실제 이미지 */}
+                {/* 이전 이미지 (크로스페이드 — 새 이미지 로드 전까지 유지) */}
+                {prevImageUrl && prevImageUrl !== imageUrl && !imageLoaded && (
+                    <Image
+                        src={prevImageUrl}
+                        alt=""
+                        fill
+                        className="object-cover opacity-100"
+                        sizes="100vw"
+                    />
+                )}
+
+                {/* 현재 이미지 (페이드인) */}
                 {imageUrl && (
                     <Image
                         src={imageUrl}
                         alt="장면"
                         fill
                         className={`object-cover transition-opacity duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-                        onLoad={() => setImageLoaded(true)}
+                        onLoad={() => {
+                            setImageLoaded(true);
+                            setPrevImageUrl(imageUrl);
+                        }}
                         sizes="100vw"
                         priority
                     />
@@ -266,6 +335,7 @@ export default function WorldExplorePage() {
                                 key={narration}
                                 text={narration}
                                 onComplete={handleTypingComplete}
+                                instant={narrationInstant}
                             />
                         )}
                     </div>

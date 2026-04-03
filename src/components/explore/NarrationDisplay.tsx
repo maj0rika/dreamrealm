@@ -5,13 +5,22 @@ import { useEffect, useState, useCallback } from "react";
 interface NarrationDisplayProps {
     text: string;
     onComplete: () => void;
+    /** true면 타이핑 효과 없이 즉시 전체 표시 (캐시된 대화 복원용) */
+    instant?: boolean;
 }
 
-export function NarrationDisplay({ text, onComplete }: NarrationDisplayProps) {
+export function NarrationDisplay({ text, onComplete, instant }: NarrationDisplayProps) {
     const [displayed, setDisplayed] = useState("");
     const [isComplete, setIsComplete] = useState(false);
 
     useEffect(() => {
+        if (instant) {
+            setDisplayed(text);
+            setIsComplete(true);
+            onComplete();
+            return;
+        }
+
         setDisplayed("");
         setIsComplete(false);
 
@@ -29,7 +38,7 @@ export function NarrationDisplay({ text, onComplete }: NarrationDisplayProps) {
         }, 30);
 
         return () => clearInterval(timer);
-    }, [text, onComplete]);
+    }, [text, onComplete, instant]);
 
     const handleSkip = useCallback(() => {
         if (!isComplete) {
