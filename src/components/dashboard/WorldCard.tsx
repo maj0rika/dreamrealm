@@ -136,7 +136,7 @@ export function WorldCard({ world }: WorldCardProps) {
                     {/* 메타 정보 + 이어하기 */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 text-xs text-zinc-500">
-                            <span>{getRelativeTime(world.updated_at)}</span>
+                            <span suppressHydrationWarning>{getRelativeTime(world.updated_at)}</span>
                             <span>🎲 {world.turn_count}턴</span>
                         </div>
                         <Button
