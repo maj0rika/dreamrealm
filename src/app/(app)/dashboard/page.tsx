@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import { getUserWorlds } from "@/lib/db/worlds";
 import { WorldCard } from "@/components/dashboard/WorldCard";
 import { Button } from "@/components/ui/button";

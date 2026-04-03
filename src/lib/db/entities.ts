@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { Entity, BehaviorRules } from "@/types/world";
 
 export async function getEntity(entityId: string): Promise<Entity> {

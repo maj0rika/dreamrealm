@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import { callAI } from "@/lib/ai/client";
 import { buildContext } from "@/lib/ai/context-builder";
 import { buildNarratorMessages } from "@/lib/ai/prompts/narrator";

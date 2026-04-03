@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@/lib/db/supabase";
+import { createBrowserClient } from "@/lib/db/supabase-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export default function LoginPage() {
     const router = useRouter();
-    const supabase = createBrowserClient();
+    const supabase = useMemo(() => createBrowserClient(), []);
+    const getSupabase = () => supabase;
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -20,7 +21,7 @@ export default function LoginPage() {
     async function handleEmailLogin() {
         setError(null);
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await getSupabase().auth.signInWithPassword({
             email,
             password,
         });
@@ -35,7 +36,7 @@ export default function LoginPage() {
     async function handleEmailSignUp() {
         setError(null);
         setLoading(true);
-        const { error } = await supabase.auth.signUp({
+        const { error } = await getSupabase().auth.signUp({
             email,
             password,
         });
@@ -49,7 +50,7 @@ export default function LoginPage() {
 
     async function handleGoogleLogin() {
         setError(null);
-        const { error } = await supabase.auth.signInWithOAuth({
+        const { error } = await getSupabase().auth.signInWithOAuth({
             provider: "google",
             options: {
                 redirectTo: `${window.location.origin}/callback`,

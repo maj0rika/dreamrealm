@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { Turn, TurnResponse } from "@/types/world";
 
 export async function getTurn(turnId: string): Promise<Turn> {

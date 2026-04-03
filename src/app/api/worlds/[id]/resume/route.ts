@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import { getWorld } from "@/lib/db/worlds";
 import { getLatestTurns } from "@/lib/db/turns";
 import { getWorldLocations } from "@/lib/db/locations";

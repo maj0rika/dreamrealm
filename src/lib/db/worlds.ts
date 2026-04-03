@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { World, WorldSpec, WorldTime } from "@/types/world";
 
 export async function getWorld(worldId: string): Promise<World> {

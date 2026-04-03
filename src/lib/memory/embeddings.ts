@@ -1,14 +1,21 @@
 import OpenAI from "openai";
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import type { MemoryEmbedding } from "@/types/world";
 
-const openaiClient = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+let _openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+    if (!_openaiClient) {
+        _openaiClient = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+        });
+    }
+    return _openaiClient;
+}
 
 /** 텍스트 → 임베딩 벡터 생성 (text-embedding-3-small) */
 export async function createEmbeddingVector(text: string): Promise<number[]> {
-    const response = await openaiClient.embeddings.create({
+    const response = await getOpenAIClient().embeddings.create({
         model: "text-embedding-3-small",
         input: text,
     });

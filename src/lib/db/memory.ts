@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { MemoryEmbedding } from "@/types/world";
 
 export async function createEmbedding(params: {

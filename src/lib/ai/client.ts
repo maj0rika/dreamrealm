@@ -1,17 +1,28 @@
 import OpenAI from "openai";
 import type { Plan } from "@/types/user";
 
-// OpenRouter 클라이언트 (유료 플랜)
-const openRouterClient = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: process.env.OPENROUTER_API_KEY,
-});
+let _openRouterClient: OpenAI | null = null;
+let _groqClient: OpenAI | null = null;
 
-// Groq 클라이언트 (무료 티어 폴백)
-const groqClient = new OpenAI({
-    baseURL: "https://api.groq.com/openai/v1",
-    apiKey: process.env.GROQ_API_KEY,
-});
+function getOpenRouterClient(): OpenAI {
+    if (!_openRouterClient) {
+        _openRouterClient = new OpenAI({
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKey: process.env.OPENROUTER_API_KEY,
+        });
+    }
+    return _openRouterClient;
+}
+
+function getGroqClient(): OpenAI {
+    if (!_groqClient) {
+        _groqClient = new OpenAI({
+            baseURL: "https://api.groq.com/openai/v1",
+            apiKey: process.env.GROQ_API_KEY,
+        });
+    }
+    return _groqClient;
+}
 
 /** 플랜별 모델 선택 */
 export function getModel(userPlan: Plan): string {
@@ -24,9 +35,9 @@ export function getModel(userPlan: Plan): string {
 /** 플랜별 클라이언트 선택 */
 export function getClient(userPlan: Plan): OpenAI {
     if (userPlan === "free") {
-        return groqClient;
+        return getGroqClient();
     }
-    return openRouterClient;
+    return getOpenRouterClient();
 }
 
 interface CallAIOptions {

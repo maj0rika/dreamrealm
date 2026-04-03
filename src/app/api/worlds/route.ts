@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import { callAI } from "@/lib/ai/client";
 import { buildWorldGeneratorMessages } from "@/lib/ai/prompts/world-generator";
 import { buildOpeningSceneMessages } from "@/lib/ai/prompts/opening-scene";

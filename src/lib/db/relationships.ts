@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { Relationship } from "@/types/world";
 
 export async function getRelationship(relationshipId: string): Promise<Relationship> {

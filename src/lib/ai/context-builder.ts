@@ -3,7 +3,7 @@ import { getWorldLocations } from "@/lib/db/locations";
 import { getWorldEntities } from "@/lib/db/entities";
 import { getEntityRelationships } from "@/lib/db/relationships";
 import { getLatestTurns } from "@/lib/db/turns";
-import { createServerClient } from "@/lib/db/supabase";
+import { createServerClient } from "@/lib/db/supabase-server";
 import {
     createEmbeddingVector,
     searchSimilarMemories,

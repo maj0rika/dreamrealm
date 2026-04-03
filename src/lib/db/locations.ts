@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { Location } from "@/types/world";
 
 export async function getLocation(locationId: string): Promise<Location> {

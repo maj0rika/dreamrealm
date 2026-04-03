@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createBrowserClient } from "@/lib/db/supabase";
+import { useEffect, useRef, useState } from "react";
+import { createBrowserClient } from "@/lib/db/supabase-browser";
 import type { User } from "@supabase/supabase-js";
 import type { Profile } from "@/types/user";
 
@@ -12,7 +12,11 @@ interface AuthState {
 }
 
 export function useAuth() {
-    const supabase = createBrowserClient();
+    const supabaseRef = useRef<ReturnType<typeof createBrowserClient> | null>(null);
+    if (typeof window !== "undefined" && !supabaseRef.current) {
+        supabaseRef.current = createBrowserClient();
+    }
+    const supabase = supabaseRef.current!;
     const [state, setState] = useState<AuthState>({
         user: null,
         profile: null,

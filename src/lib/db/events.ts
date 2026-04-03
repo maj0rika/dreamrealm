@@ -1,4 +1,4 @@
-import { createServerClient } from "./supabase";
+import { createServerClient } from "./supabase-server";
 import type { Event } from "@/types/world";
 
 export async function getEvent(eventId: string): Promise<Event> {
