@@ -228,7 +228,6 @@ export async function POST(request: Request) {
                     .from("worlds")
                     .update({ story_direction: storyParsed.data })
                     .eq("id", world.id);
-                console.log("[story-director] 초기 direction 생성 완료:", world.id);
             } else {
                 console.warn("[story-director] 스키마 검증 실패, 기본값 사용");
             }
@@ -313,7 +312,6 @@ export async function POST(request: Request) {
         const coverPrompt = generatedSpec.image_prompt
             ? generatedSpec.image_prompt + ", " + artStyle
             : null;
-        console.log("[cover-image] 생성 시작:", world.id, "prompt:", coverPrompt?.slice(0, 80));
         if (coverPrompt) {
             generateAndSaveCoverImage(world.id, coverPrompt).catch(
                 (err) => console.error("[cover-image] 생성 실패:", err)
@@ -345,18 +343,14 @@ async function generateAndSaveCoverImage(
     worldId: string,
     prompt: string
 ): Promise<void> {
-    console.log("[cover-image] generateImage 호출 중...");
     const imageUrl = await generateImage(prompt);
     if (!imageUrl) {
         console.error("[cover-image] generateImage 실패 — null 반환");
         return;
     }
-    console.log("[cover-image] 이미지 URL 획득:", imageUrl.slice(0, 80));
 
     try {
-        console.log("[cover-image] Storage 업로드 시작...");
         const publicUrl = await uploadImageFromUrl(imageUrl, `${worldId}/cover.webp`);
-        console.log("[cover-image] 업로드 성공:", publicUrl.slice(0, 80));
 
         const supabase = await createServerClient();
         const { error } = await supabase
@@ -366,8 +360,6 @@ async function generateAndSaveCoverImage(
 
         if (error) {
             console.error("[cover-image] DB 업데이트 실패:", error.message);
-        } else {
-            console.log("[cover-image] DB 업데이트 완료 — worldId:", worldId);
         }
     } catch (err) {
         console.error("[cover-image] 업로드/DB 에러:", err);

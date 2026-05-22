@@ -90,7 +90,6 @@ export async function POST(
         const aiParsed = turnResponseSchema.safeParse(aiJson);
         if (!aiParsed.success) {
             console.error("[turn] 스키마 검증 실패:", JSON.stringify(aiParsed.error.flatten()));
-            console.error("[turn] AI 원본 응답:", JSON.stringify(aiJson).slice(0, 500));
             return Response.json(
                 { error: "AI 응답 형식 오류", details: aiParsed.error.flatten() },
                 { status: 502 }
@@ -159,11 +158,9 @@ export async function POST(
                 .from("worlds")
                 .update({ completed_at: new Date().toISOString() })
                 .eq("id", worldId);
-            console.log("[ending] 월드 완결 처리:", worldId);
         }
 
         // 이미지 생성: 3층 프롬프트 (앵커 + 가변 + 아트스타일) + 장소 시드 고정
-        console.log("[turn] generate_image:", aiResponse.generate_image, "location_changed:", aiResponse.location_changed, "image_prompt:", aiResponse.image_prompt?.slice(0, 50));
         if (aiResponse.generate_image && aiResponse.image_prompt) {
             // 주인공 현재 위치의 시각 앵커 + 시드 조회
             const [locations, entities] = await Promise.all([
@@ -299,8 +296,6 @@ async function updateStoryDirection(
     currentTurn: number,
     userPlan: Plan
 ): Promise<void> {
-    console.log("[story-director] 재조정 시작 — turn:", currentTurn, "importance:", aiResponse.event.importance);
-
     const supabase = await createServerClient();
 
     // C1: 레이스 컨디션 방지 — DB에서 최신 story_direction 재조회
@@ -382,7 +377,6 @@ async function updateStoryDirection(
                     embedding,
                 });
                 archivedThreads.push(thread);
-                console.log("[story-director] thread 아카이빙:", thread.slice(0, 30));
             } catch {
                 // 아카이빙 실패해도 계속 진행
             }
@@ -398,8 +392,6 @@ async function updateStoryDirection(
         .from("worlds")
         .update({ story_direction: newDirection })
         .eq("id", worldId);
-
-    console.log("[story-director] 재조정 완료 — act:", newDirection.current_act, "tension:", newDirection.tension_level);
 }
 
 /** 턴 이미지 비동기 생성 → Storage 업로드 → DB 업데이트 */
@@ -409,19 +401,16 @@ async function generateAndSaveTurnImage(
     prompt: string,
     seed?: number
 ): Promise<void> {
-    console.log("[turn-image] 생성 시작 — turn:", turnNumber, "seed:", seed);
     const imageUrl = await generateImage(prompt, seed);
     if (!imageUrl) {
         console.error("[turn-image] 이미지 생성 실패 — null");
         return;
     }
-    console.log("[turn-image] 업로드 시작...");
 
     const publicUrl = await uploadImageFromUrl(
         imageUrl,
         `${worldId}/turns/${turnNumber}.webp`
     );
-    console.log("[turn-image] 업로드 완료:", publicUrl.slice(0, 80));
 
     const supabase = await createServerClient();
     const { error } = await supabase
@@ -432,7 +421,5 @@ async function generateAndSaveTurnImage(
 
     if (error) {
         console.error("[turn-image] DB 업데이트 실패:", error.message);
-    } else {
-        console.log("[turn-image] DB 업데이트 완료 — turn:", turnNumber);
     }
 }

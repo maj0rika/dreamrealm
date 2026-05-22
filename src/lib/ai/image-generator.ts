@@ -17,7 +17,6 @@ export async function ensureEnglishPrompt(prompt: string): Promise<string> {
         return prompt; // 이미 영어
     }
 
-    console.log("[image-prompt] 한국어 감지, 영문 번역 시작");
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return prompt;
 
@@ -42,7 +41,6 @@ export async function ensureEnglishPrompt(prompt: string): Promise<string> {
 
         const translated = response.choices[0]?.message?.content?.trim();
         if (translated) {
-            console.log("[image-prompt] 번역 완료:", translated.slice(0, 80));
             return translated;
         }
     } catch (err) {
@@ -74,7 +72,6 @@ export async function generateImage(prompt: string, seed?: number): Promise<stri
     try {
         // 한국어 프롬프트면 영어로 번역
         const finalPrompt = await ensureEnglishPrompt(prompt);
-        console.log("[image-generator] API 호출 시작, prompt:", finalPrompt.slice(0, 80));
 
         // 1. Prediction 생성 (Prefer: wait 사용하지 않음 — fire-and-forget 호환)
         const createResponse = await fetch(REPLICATE_MODEL_URL, {
@@ -102,11 +99,9 @@ export async function generateImage(prompt: string, seed?: number): Promise<stri
         }
 
         const prediction: ReplicatePrediction = await createResponse.json();
-        console.log("[image-generator] Prediction 생성됨:", prediction.id, "status:", prediction.status);
 
         // Prefer: wait 없이도 이미 succeeded일 수 있음
         if (prediction.status === "succeeded" && prediction.output && prediction.output.length > 0) {
-            console.log("[image-generator] 즉시 완료:", prediction.output[0].slice(0, 80));
             return prediction.output[0];
         }
 
@@ -126,8 +121,6 @@ export async function generateImage(prompt: string, seed?: number): Promise<stri
 
             await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
-            console.log("[image-generator] 폴링 중...", current.id, "경과:", Math.round((Date.now() - startTime) / 1000) + "초");
-
             const pollResponse = await fetch(`${REPLICATE_POLL_URL}/${current.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -138,11 +131,9 @@ export async function generateImage(prompt: string, seed?: number): Promise<stri
             }
 
             current = await pollResponse.json();
-            console.log("[image-generator] 폴링 상태:", current.status);
         }
 
         if (current.status === "succeeded" && current.output && current.output.length > 0) {
-            console.log("[image-generator] 이미지 생성 성공:", current.output[0].slice(0, 80));
             return current.output[0];
         }
 
