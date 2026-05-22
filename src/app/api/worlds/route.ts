@@ -17,6 +17,11 @@ import { createTurn } from "@/lib/db/turns";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/upload";
 import { getDefaultArtStyle, getArtStyleById } from "@/lib/ai/art-styles";
+import {
+    consumeGenerationQuota,
+    generationQuotaResponse,
+    isGenerationQuotaExceeded,
+} from "@/lib/quotas/generation";
 import type { WorldSpec, TurnResponse, Mood } from "@/types/world";
 
 export async function POST(request: Request) {
@@ -30,14 +35,6 @@ export async function POST(request: Request) {
             return Response.json({ error: "인증이 필요합니다" }, { status: 401 });
         }
 
-        // 사용자 프로필 조회 (플랜 확인)
-        const { data: profile } = await supabase
-            .from("profiles")
-            .select("plan")
-            .eq("id", user.id)
-            .single();
-        const userPlan = profile?.plan ?? "free";
-
         // 입력 검증
         const body = await request.json();
         const parsed = createWorldRequestSchema.safeParse(body);
@@ -48,6 +45,17 @@ export async function POST(request: Request) {
             );
         }
         const { genre, prompt, art_style: artStyleId } = parsed.data;
+
+        let quota;
+        try {
+            quota = await consumeGenerationQuota(supabase);
+        } catch (error) {
+            if (isGenerationQuotaExceeded(error)) {
+                return generationQuotaResponse();
+            }
+            throw error;
+        }
+        const userPlan = quota.plan;
 
         // 아트 스타일 결정: 명시적 선택 → 장르 기본값
         const artStyleOption = artStyleId
@@ -327,12 +335,7 @@ export async function POST(request: Request) {
     } catch (error) {
         console.error("월드 생성 오류:", error);
         return Response.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "월드 생성 중 오류가 발생했습니다",
-            },
+            { error: "월드 생성 중 오류가 발생했습니다" },
             { status: 500 }
         );
     }

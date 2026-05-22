@@ -7,6 +7,7 @@ import { callAI } from "@/lib/ai/client";
 import { buildOpeningSceneMessages } from "@/lib/ai/prompts/opening-scene";
 import { buildTimePassageMessages } from "@/lib/ai/prompts/time-passage";
 import { turnResponseSchema, timePassageResponseSchema } from "@/lib/ai/schemas";
+import { tryConsumeGenerationQuota } from "@/lib/quotas/generation";
 import type { TimePassageEvent } from "@/types/world";
 
 export async function GET(
@@ -58,12 +59,10 @@ export async function GET(
         // 턴이 없으면 시작 장면 재생성
         if (!lastTurn) {
             try {
-                const { data: profile } = await supabase
-                    .from("profiles")
-                    .select("plan")
-                    .eq("id", user.id)
-                    .single();
-                const userPlan = profile?.plan ?? "free";
+                const quota = await tryConsumeGenerationQuota(supabase);
+                if (!quota) {
+                    throw new Error("GENERATION_QUOTA_EXCEEDED");
+                }
 
                 const minimalSpec = {
                     name: world.name,
@@ -105,7 +104,7 @@ export async function GET(
                 };
 
                 const messages = buildOpeningSceneMessages(minimalSpec);
-                const aiRaw = await callAI(messages, userPlan);
+                const aiRaw = await callAI(messages, quota.plan);
                 const sceneParsed = turnResponseSchema.safeParse(
                     JSON.parse(aiRaw)
                 );
@@ -133,12 +132,10 @@ export async function GET(
 
             if (hoursElapsed >= 1) {
                 try {
-                    const { data: profile } = await supabase
-                        .from("profiles")
-                        .select("plan")
-                        .eq("id", user.id)
-                        .single();
-                    const userPlan = profile?.plan ?? "free";
+                    const quota = await tryConsumeGenerationQuota(supabase);
+                    if (!quota) {
+                        throw new Error("GENERATION_QUOTA_EXCEEDED");
+                    }
 
                     // NPC 정보 조립
                     const npcs = entities
@@ -177,7 +174,7 @@ export async function GET(
                         recentSummary: latestSummary?.summary ?? null,
                     });
 
-                    const aiRaw = await callAI(messages, userPlan, { temperature: 0.8 });
+                    const aiRaw = await callAI(messages, quota.plan, { temperature: 0.8 });
                     const parsed = timePassageResponseSchema.safeParse(JSON.parse(aiRaw));
 
                     if (parsed.success && parsed.data.events.length > 0) {
@@ -259,6 +256,13 @@ export async function GET(
                         }));
                     }
                 } catch (err) {
+                    if (err instanceof Error && err.message === "GENERATION_QUOTA_EXCEEDED") {
+                        return Response.json({
+                            world,
+                            lastTurn,
+                            currentLocation,
+                        });
+                    }
                     console.error("[resume] 시간 경과 사건 생성 실패:", err);
                     // 실패해도 정상 resume 진행
                 }

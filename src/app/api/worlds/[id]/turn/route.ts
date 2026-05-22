@@ -15,6 +15,11 @@ import { getWorldEntities } from "@/lib/db/entities";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/upload";
 import { createEmbeddingVector, storeMemory } from "@/lib/memory/embeddings";
+import {
+    consumeGenerationQuota,
+    generationQuotaResponse,
+    isGenerationQuotaExceeded,
+} from "@/lib/quotas/generation";
 import type { TurnResponse, Mood, StoryDirection } from "@/types/world";
 import type { Plan } from "@/types/user";
 
@@ -62,13 +67,16 @@ export async function POST(
             );
         }
 
-        // 사용자 플랜 조회
-        const { data: profile } = await supabase
-            .from("profiles")
-            .select("plan")
-            .eq("id", user.id)
-            .single();
-        const userPlan = profile?.plan ?? "free";
+        let quota;
+        try {
+            quota = await consumeGenerationQuota(supabase);
+        } catch (error) {
+            if (isGenerationQuotaExceeded(error)) {
+                return generationQuotaResponse();
+            }
+            throw error;
+        }
+        const userPlan = quota.plan;
 
         // 컨텍스트 조립 (플래시백 정보 포함)
         const { contextText, flashback } = await buildContext(worldId, input);
@@ -225,12 +233,7 @@ export async function POST(
     } catch (error) {
         console.error("턴 처리 오류:", error);
         return Response.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "턴 처리 중 오류가 발생했습니다",
-            },
+            { error: "턴 처리 중 오류가 발생했습니다" },
             { status: 500 }
         );
     }
